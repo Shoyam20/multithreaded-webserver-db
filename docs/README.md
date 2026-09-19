@@ -42,7 +42,7 @@ Client → TCP/HTTP → Main Thread (accept loop) → Request Queue → Thread P
 | Order_Items | order_item_id | order_id |
 | Order_Status_History | history_id | order_id |
 
-## Concurrency Design
+## Concurrency Design 
 
 - **Thread pool**: fixed-size pool of worker threads created at startup, avoiding the overhead of spawning a new thread per request.
 - **Request queue**: a shared `std::queue` protected by `std::mutex`, with `std::condition_variable` used to wake idle workers (producer-consumer pattern).
