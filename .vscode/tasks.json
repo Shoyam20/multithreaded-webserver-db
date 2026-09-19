@@ -1,0 +1,29 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "type": "shell",
+            "command": "g++",
+            "args": [
+                "-g",
+                "main.cpp",
+                "-o",
+                "server.exe",
+                "-I",
+                "C:/Program Files/MySQL/MySQL Server 8.0/include",
+                "-L",
+                "C:/Program Files/MySQL/MySQL Server 8.0/lib",
+                "-lmysql",
+                "-lws2_32",
+                "-static-libgcc",
+                "-static-libstdc++"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": ["$gcc"]
+        }
+    ]
+}
