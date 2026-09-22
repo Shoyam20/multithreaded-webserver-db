@@ -1,10 +1,11 @@
 #include <iostream>
 #include <winsock2.h>
 #include <cstring>
+#include <cctype>
+#include <cstdlib>
 #include <string>
 #include <sstream>
 #include <map>
-
 #include <queue>
 #include <mutex>
 #include <thread>
@@ -57,9 +58,10 @@ bool initDatabase()
 // Escape a string for safe use in SQL (prevents SQL injection)
 string esc(const string& s)
 {
-    char buf[2048];
-    mysql_real_escape_string(dbConn, buf, s.c_str(), (unsigned long)s.size());
-    return string(buf);
+    vector<char> buf(s.size() * 2 + 1);
+    unsigned long n = mysql_real_escape_string(dbConn, buf.data(), s.c_str(),
+                                               (unsigned long)s.size());
+    return string(buf.data(), n);
 }
 
 // ============================================================
@@ -253,6 +255,19 @@ string parsePath(const string& raw)
     return path;
 }
 
+// Read the Content-Length value out of the header block (0 if absent)
+size_t contentLength(const string& headers)
+{
+    string lower;
+    for (size_t i = 0; i < headers.size(); i++)
+        lower += (char)tolower((unsigned char)headers[i]);
+
+    size_t p = lower.find("content-length:");
+    if (p == string::npos) return 0;
+
+    return (size_t)strtoul(headers.c_str() + p + 15, nullptr, 10);
+}
+
 string parseMethod(const string& raw)
 {
     istringstream iss(raw);
@@ -361,11 +376,28 @@ void worker(int workerId)
         }
 
         char buffer[8192];
-        int n = recv(req.clientSocket, buffer, sizeof(buffer) - 1, 0);
-        if (n <= 0) { closesocket(req.clientSocket); continue; }
-        buffer[n] = '\0';
+        string raw;
 
-        string raw(buffer);
+        // Read until the end of the header block has arrived
+        size_t headerEnd = string::npos;
+        while ((headerEnd = raw.find("\r\n\r\n")) == string::npos)
+        {
+            if (raw.size() > 65536) break;
+            int n = recv(req.clientSocket, buffer, sizeof(buffer), 0);
+            if (n <= 0) break;
+            raw.append(buffer, n);
+        }
+        if (headerEnd == string::npos) { closesocket(req.clientSocket); continue; }
+
+        // Keep reading until the whole body has arrived
+        size_t need = contentLength(raw.substr(0, headerEnd));
+        while (raw.size() - (headerEnd + 4) < need)
+        {
+            int n = recv(req.clientSocket, buffer, sizeof(buffer), 0);
+            if (n <= 0) break;
+            raw.append(buffer, n);
+        }
+
         string method = parseMethod(raw);
         string path   = parsePath(raw);
 
