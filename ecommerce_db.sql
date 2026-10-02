@@ -11,7 +11,35 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. CATEGORIES
+-- 2. USER SESSIONS
+-- Stores every login session of every user.
+-- One user can have multiple sessions.
+-- Example:
+-- Radhika -> Chrome  -> Session A123
+-- Radhika -> Edge    -> Session B456
+-- Shreya -> Chrome -> Session C789
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+    session_id VARCHAR(64) PRIMARY KEY,
+    user_id INT NOT NULL,
+    login_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    logout_time TIMESTAMP NULL,
+    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+
+-- Indexes for faster session lookup
+CREATE INDEX idx_sessions_user
+ON user_sessions(user_id);
+
+CREATE INDEX idx_sessions_active
+ON user_sessions(is_active);
+
+CREATE INDEX idx_sessions_login
+ON user_sessions(login_time);
+
+-- 3. CATEGORIES
 -- Stores different product categories.
 -- Example: Electronics, Audio, Accessories
 CREATE TABLE IF NOT EXISTS categories (
@@ -38,7 +66,7 @@ VALUES
 ('Sports & Fitness'),
 ('Toys & Games');
 
--- 3. PRODUCTS 
+-- 4. PRODUCTS 
 -- Stores information about products available in the store. 
 CREATE TABLE IF NOT EXISTS products (
     product_id   INT AUTO_INCREMENT PRIMARY KEY,
@@ -70,7 +98,7 @@ VALUES
 ('Yoga Mat','Anti-slip exercise and yoga mat',799.00, 40, 14),
 ('Building Blocks','Creative building block set for children',899.00, 25, 15);
 
--- 4. CART
+-- 5. CART
 -- Stores shopping carts belonging to users.
 -- A user can have multiple carts over time.
 -- However, the application should allow only ONE cart with status = 'ACTIVE' for a user at a time.
@@ -86,7 +114,7 @@ CREATE TABLE IF NOT EXISTS cart (
     FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
 
--- 5. CART ITEMS
+-- 6. CART ITEMS
 -- Stores products added to a shopping cart.
 -- One cart can contain many products.
 CREATE TABLE IF NOT EXISTS cart_items (
@@ -102,7 +130,7 @@ CREATE TABLE IF NOT EXISTS cart_items (
     UNIQUE(cart_id, product_id)
 );
 
---- 6. ORDERS
+--- 7. ORDERS
 -- Stores orders created after checkout.
 -- A cart is converted into an order during checkout.
 -- The cart_id keeps track of which cart created the order.
@@ -118,7 +146,7 @@ CREATE TABLE IF NOT EXISTS orders (
     UNIQUE(cart_id)
 );
 
--- 7. ORDER ITEMS
+-- 8. ORDER ITEMS
 -- Stores products that were purchased.
 CREATE TABLE IF NOT EXISTS order_items (
     order_item_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -131,7 +159,7 @@ CREATE TABLE IF NOT EXISTS order_items (
     UNIQUE(order_id, product_id)
 );
 
--- 8. PAYMENTS
+-- 9. PAYMENTS
 -- Stores payment information for orders.
 CREATE TABLE IF NOT EXISTS payments (
     payment_id INT AUTO_INCREMENT PRIMARY KEY,
