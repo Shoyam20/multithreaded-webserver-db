@@ -974,7 +974,7 @@ string checkoutCart(
                     to_string(cartId) +
                     "," +
                     to_string(total) +
-                    ",'PENDING')";
+                    ",'PLACED')";
 
                 if (mysql_query(
                         dbConn,
@@ -1048,6 +1048,22 @@ string checkoutCart(
                         if (mysql_query(
                                 dbConn,
                                 payment.c_str()))
+                        {
+                            errorMessage =
+                                mysql_error(dbConn);
+                        }
+                    }
+
+                    if (errorMessage.empty())
+                    {
+                        string clearCart =
+                            "DELETE FROM cart_items "
+                            "WHERE cart_id=" +
+                            to_string(cartId);
+
+                        if (mysql_query(
+                                dbConn,
+                                clearCart.c_str()))
                         {
                             errorMessage =
                                 mysql_error(dbConn);
