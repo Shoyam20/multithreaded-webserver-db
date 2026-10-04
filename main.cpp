@@ -81,6 +81,21 @@ string esc(const string& s)
 }
 
 // ============================================================
+//  REQUEST CONTEXT (per worker thread)
+// ============================================================
+// A worker handles one request at a time, so the current request's
+// session can live in thread-local storage. This keeps the session
+// out of the signature of all 40+ page builders.
+thread_local string tlSessionId;
+thread_local string tlUserName;
+thread_local string tlExtraHeaders;
+
+inline bool isLoggedIn()
+{
+    return !tlSessionId.empty() && !tlUserName.empty();
+}
+
+// ============================================================
 //  HTML HELPERS
 // ============================================================
 string htmlEscape(const string& s)
@@ -117,13 +132,110 @@ string pageWrapper(const string& title, const string& body)
          ".msg{padding:10px;background:#e8f5e9;border-left:4px solid #4caf50;margin:10px 0;}"
          ".err{padding:10px;background:#ffebee;border-left:4px solid #f44336;margin:10px 0;}"
          "nav a{margin-right:15px;color:#2c3e50;}"
+         "nav{display:flex;align-items:center;}"
+         "nav .spacer{flex:1;}"
+         ".navbtn{padding:6px 14px;background:#2c3e50;color:white;border:none;"
+         "border-radius:3px;cursor:pointer;margin-left:10px;"
+         "text-decoration:none;display:inline-block;}"
+         ".user{color:#2c3e50;font-weight:bold;margin-left:10px;}"
+         ".cartform{display:flex;align-items:center;}"
+         ".cartform input{display:inline-block;width:60px;margin:0 6px 0 0;}"
+         ".out{color:#999;}"
+         ".active{color:#2e7d32;font-weight:bold;}"
+         "tr.current{background:#fff8e1 !important;}"
+         "code{font-family:Consolas,monospace;font-size:12px;}"
+         ".modal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;"
+         "background:rgba(0,0,0,0.5);z-index:100;}"
+         ".modal.open{display:flex;align-items:center;justify-content:center;}"
+         ".modal-box{background:white;padding:25px 30px;border-radius:6px;"
+         "min-width:300px;position:relative;"
+         "box-shadow:0 8px 30px rgba(0,0,0,0.3);}"
+         ".modal-box h2{margin-top:0;color:#2c3e50;}"
+         ".modal-close{position:absolute;top:6px;right:10px;background:none;"
+         "color:#888;font-size:22px;padding:0;width:auto;}"
          "</style></head><body>";
 
-    h << "<nav><a href='/'>Home</a><a href='/products'>Products</a>"
-         "<a href='/signup'>Signup</a><a href='/login'>Login</a></nav><hr>";
+    h << "<nav>"
+         "<a href='/'>Home</a>"
+         "<a href='/products'>Products</a>";
+
+    if (isLoggedIn())
+    {
+        h << "<a href='/cart'>Cart</a>"
+             "<a href='/orders'>My Orders</a>"
+             "<a href='/session'>My Session</a>"
+             "<span class='spacer'></span>"
+             "<span class='user'>Hi, "
+          << htmlEscape(tlUserName)
+          << "</span>"
+             "<a class='navbtn' href='/logout'>Logout</a>";
+    }
+    else
+    {
+        h << "<span class='spacer'></span>"
+             "<button class='navbtn' "
+             "onclick=\"openModal('loginModal')\">Login</button>"
+             "<button class='navbtn' "
+             "onclick=\"openModal('signupModal')\">Sign Up</button>";
+    }
+
+    h << "</nav><hr>";
 
     h << "<h1>" << title << "</h1>";
     h << body;
+
+    // The login/signup popups travel with every logged-out page, so
+    // any button anywhere can open them without a navigation step.
+    if (!isLoggedIn())
+    {
+        h << "<div class='modal' id='loginModal'>"
+             "<div class='modal-box'>"
+             "<button class='modal-close' "
+             "onclick=\"closeModal('loginModal')\">&times;</button>"
+             "<h2>Login</h2>"
+             "<form method='POST' action='/login'>"
+             "<input name='email' type='email' placeholder='Email' required>"
+             "<input name='password' type='password' "
+             "placeholder='Password' required>"
+             "<button type='submit'>Log In</button>"
+             "</form>"
+             "<p>No account? <a href='#' "
+             "onclick=\"closeModal('loginModal');"
+             "openModal('signupModal');return false;\">Sign up</a></p>"
+             "</div></div>";
+
+        h << "<div class='modal' id='signupModal'>"
+             "<div class='modal-box'>"
+             "<button class='modal-close' "
+             "onclick=\"closeModal('signupModal')\">&times;</button>"
+             "<h2>Create Account</h2>"
+             "<form method='POST' action='/signup'>"
+             "<input name='name' placeholder='Full Name' required>"
+             "<input name='email' type='email' placeholder='Email' required>"
+             "<input name='password' type='password' "
+             "placeholder='Password' required>"
+             "<button type='submit'>Sign Up</button>"
+             "</form>"
+             "<p>Already registered? <a href='#' "
+             "onclick=\"closeModal('signupModal');"
+             "openModal('loginModal');return false;\">Log in</a></p>"
+             "</div></div>";
+
+        h << "<script>"
+             "function openModal(id){"
+             "document.getElementById(id).classList.add('open');}"
+             "function closeModal(id){"
+             "document.getElementById(id).classList.remove('open');}"
+             "document.addEventListener('click',function(e){"
+             "if(e.target.classList.contains('modal')){"
+             "e.target.classList.remove('open');}});"
+             "document.addEventListener('keydown',function(e){"
+             "if(e.key==='Escape'){"
+             "var m=document.querySelectorAll('.modal.open');"
+             "for(var i=0;i<m.length;i++){m[i].classList.remove('open');}}});"
+             "</script>";
+    }
+
     h << "</body></html>";
 
     return h.str();
@@ -228,6 +340,199 @@ bool logoutSession(const string& sessionId)
            mysql_affected_rows(dbConn) > 0;
 }
 
+// Pull one cookie value out of the raw request headers.
+string getCookie(const string& raw, const string& name)
+{
+    size_t headerEnd = raw.find("\r\n\r\n");
+
+    string headers =
+        (headerEnd == string::npos)
+        ? raw
+        : raw.substr(0, headerEnd);
+
+    string lower;
+
+    for (size_t i = 0; i < headers.size(); i++)
+        lower += (char)tolower((unsigned char)headers[i]);
+
+    size_t p = lower.find("\r\ncookie:");
+
+    if (p == string::npos)
+        return "";
+
+    size_t lineStart = p + 9;
+    size_t lineEnd = headers.find("\r\n", lineStart);
+
+    if (lineEnd == string::npos)
+        lineEnd = headers.size();
+
+    string line =
+        headers.substr(lineStart, lineEnd - lineStart);
+
+    // Walk the "a=1; b=2" list looking for our name.
+    size_t pos = 0;
+
+    while (pos < line.size())
+    {
+        size_t semi = line.find(';', pos);
+
+        if (semi == string::npos)
+            semi = line.size();
+
+        string pair = line.substr(pos, semi - pos);
+
+        size_t a = pair.find_first_not_of(" \t");
+        size_t eq = pair.find('=');
+
+        if (a != string::npos && eq != string::npos && eq > a)
+        {
+            if (pair.substr(a, eq - a) == name)
+                return pair.substr(eq + 1);
+        }
+
+        pos = semi + 1;
+    }
+
+    return "";
+}
+
+// Display name for the logged-in user, for the navigation bar.
+string getUserName(int userId)
+{
+    if (userId <= 0)
+        return "";
+
+    lock_guard<mutex> lock(dbMutex);
+
+    string q =
+        "SELECT name FROM users WHERE user_id=" +
+        to_string(userId);
+
+    if (mysql_query(dbConn, q.c_str()))
+        return "";
+
+    MYSQL_RES* r = mysql_store_result(dbConn);
+
+    if (!r)
+        return "";
+
+    MYSQL_ROW row = mysql_fetch_row(r);
+
+    string name =
+        (row && row[0])
+        ? row[0]
+        : "";
+
+    mysql_free_result(r);
+
+    return name;
+}
+
+// ============================================================
+//  SESSION PAGE
+// ============================================================
+// Shows the rows this user has in user_sessions: which account the
+// session belongs to, when it started, when it was last used, and
+// when it was logged out. The session in use right now is marked.
+string buildSessionPage(
+    const string& sessionId,
+    int userId
+)
+{
+    lock_guard<mutex> lock(dbMutex);
+
+    string q =
+        "SELECT s.session_id, u.name, u.email, s.login_time, "
+        "s.last_activity, s.logout_time, s.is_active "
+        "FROM user_sessions s "
+        "JOIN users u ON s.user_id=u.user_id "
+        "WHERE s.user_id=" + to_string(userId) + " "
+        "ORDER BY s.login_time DESC "
+        "LIMIT 20";
+
+    if (mysql_query(dbConn, q.c_str()))
+        return pageWrapper(
+            "Session",
+            string("<div class='err'>") +
+            htmlEscape(mysql_error(dbConn)) +
+            "</div>"
+        );
+
+    MYSQL_RES* result = mysql_store_result(dbConn);
+
+    if (!result)
+        return pageWrapper(
+            "Session",
+            "<div class='err'>No result</div>"
+        );
+
+    ostringstream t;
+
+    t << "<p>Signed in as <b>"
+      << htmlEscape(tlUserName)
+      << "</b>. The highlighted row is the session this browser "
+         "is using right now.</p>";
+
+    t << "<table><tr>"
+         "<th>Session ID</th><th>User</th><th>Email</th>"
+         "<th>Login Time</th><th>Last Activity</th>"
+         "<th>Logout Time</th><th>Status</th>"
+         "</tr>";
+
+    MYSQL_ROW row;
+    int shown = 0;
+
+    while ((row = mysql_fetch_row(result)))
+    {
+        string rowSession = row[0] ? row[0] : "";
+        bool isCurrent = (rowSession == sessionId);
+
+        t << "<tr"
+          << (isCurrent ? " class='current'" : "")
+          << ">";
+
+        t << "<td><code>"
+          << htmlEscape(rowSession)
+          << "</code>"
+          << (isCurrent ? " <b>(this browser)</b>" : "")
+          << "</td>";
+
+        for (int i = 1; i <= 4; i++)
+            t << "<td>" << htmlEscape(row[i] ? row[i] : "") << "</td>";
+
+        // logout_time stays NULL until the session is closed.
+        t << "<td>"
+          << (row[5] ? htmlEscape(row[5]) : "<span class='out'>&mdash;</span>")
+          << "</td>";
+
+        bool active =
+            row[6] && (row[6][0] == '1' || row[6][0] == 't');
+
+        t << "<td>"
+          << (active
+              ? "<span class='active'>Active</span>"
+              : "<span class='out'>Logged out</span>")
+          << "</td>";
+
+        t << "</tr>";
+        shown++;
+    }
+
+    t << "</table>";
+
+    mysql_free_result(result);
+
+    if (shown == 0)
+        return pageWrapper(
+            "Session",
+            "<div class='err'>No sessions recorded.</div>"
+        );
+
+    t << "<p><a class='navbtn' href='/logout'>Log out this session</a></p>";
+
+    return pageWrapper("My Session", t.str());
+}
+
 // ============================================================
 //  PRODUCTS PAGE
 // ============================================================
@@ -256,7 +561,8 @@ string buildProductsPage()
     ostringstream t;
 
     t << "<table><tr><th>ID</th><th>Name</th><th>Description</th>"
-         "<th>Price</th><th>Stock</th><th>Category</th></tr>";
+         "<th>Price</th><th>Stock</th><th>Category</th>"
+         "<th>Action</th></tr>";
 
     MYSQL_ROW row;
 
@@ -267,7 +573,37 @@ string buildProductsPage()
         for (int i = 0; i < 6; i++)
             t << "<td>" << htmlEscape(row[i] ? row[i] : "") << "</td>";
 
-        t << "</tr>";
+        string productId = row[0] ? row[0] : "";
+        int stock = row[4] ? atoi(row[4]) : 0;
+
+        t << "<td>";
+
+        if (stock <= 0)
+        {
+            t << "<span class='out'>Out of stock</span>";
+        }
+        else if (!isLoggedIn())
+        {
+            // Not signed in: open the login popup rather than
+            // bouncing the shopper away to another page.
+            t << "<button class='navbtn' "
+                 "onclick=\"openModal('loginModal')\">"
+                 "Login to buy</button>";
+        }
+        else
+        {
+            t << "<form class='cartform' method='GET' action='/add-cart'>"
+                 "<input type='hidden' name='product_id' value='"
+              << htmlEscape(productId)
+              << "'>"
+                 "<input type='number' name='quantity' value='1' min='1' max='"
+              << stock
+              << "'>"
+                 "<button type='submit'>Add to Cart</button>"
+                 "</form>";
+        }
+
+        t << "</td></tr>";
     }
 
     t << "</table>";
@@ -462,29 +798,29 @@ string handleLogin(const map<string,string>& form)
             true
         );
 
+    // Hand the session to the browser as a cookie, so every later
+    // request carries it automatically and no link needs to embed it.
+    tlSessionId = sessionId;
+    tlUserName  = dbName;
+
+    tlExtraHeaders =
+        "Set-Cookie: session_id=" + sessionId +
+        "; Path=/; HttpOnly; SameSite=Lax\r\n";
+
     ostringstream b;
 
     b << "<div class='msg'>Welcome back, <b>"
       << htmlEscape(dbName)
       << "</b>! You are now logged in.</div>"
 
-      << "<p>Session ID: <code>"
-      << sessionId
-      << "</code></p>"
+      << "<p>Pick up where you left off:</p>"
 
-      << "<p><a href='/products'>Browse products →</a></p>"
-
-      << "<p><a href='/cart?session_id="
-      << sessionId
-      << "'>View Cart</a></p>"
-
-      << "<p><a href='/orders?session_id="
-      << sessionId
-      << "'>View Orders</a></p>"
-
-      << "<p><a href='/logout?session_id="
-      << sessionId
-      << "'>Logout</a></p>";
+      << "<p>"
+      << "<a class='navbtn' href='/products'>Browse Products</a>"
+      << "<a class='navbtn' href='/cart'>View Cart</a>"
+      << "<a class='navbtn' href='/orders'>My Orders</a>"
+      << "<a class='navbtn' href='/session'>My Session</a>"
+      << "</p>";
 
     return pageWrapper("Logged In", b.str());
 }
@@ -1447,7 +1783,8 @@ int getIntParameter(
 // ============================================================
 string makeHttpResponse(
     const string& body,
-    int status = 200
+    int status = 200,
+    const string& extraHeaders = ""
 )
 {
     string text = "OK";
@@ -1475,6 +1812,9 @@ string makeHttpResponse(
       << body.size()
       << "\r\n";
 
+    if (!extraHeaders.empty())
+        r << extraHeaders;
+
     r << "Connection: close\r\n\r\n";
 
     r << body;
@@ -1491,6 +1831,21 @@ string route(
     const string& rawRequest
 )
 {
+    // Cookie first; fall back to the older ?session_id= links so
+    // any bookmarked URL keeps working.
+    tlSessionId = getCookie(rawRequest, "session_id");
+
+    if (tlSessionId.empty())
+    {
+        map<string,string> q0 = parseQuery(rawRequest);
+
+        if (q0.count("session_id"))
+            tlSessionId = q0["session_id"];
+    }
+
+    tlUserName =
+        getUserName(getSessionUserId(tlSessionId));
+
     if (path == "/products")
         return buildProductsPage();
 
@@ -1522,16 +1877,27 @@ string route(
         string sessionId =
             params.count("session_id")
             ? params["session_id"]
-            : "";
+            : tlSessionId;
 
-        if (logoutSession(sessionId))
+        bool loggedOut = logoutSession(sessionId);
+
+        // Clear the context either way so the navigation bar on the
+        // page we are about to render shows the logged-out state.
+        tlSessionId.clear();
+        tlUserName.clear();
+
+        tlExtraHeaders =
+            "Set-Cookie: session_id=; Path=/; HttpOnly; SameSite=Lax; "
+            "Expires=Thu, 01 Jan 1970 00:00:00 GMT\r\n";
+
+        if (loggedOut)
         {
             return pageWrapper(
                 "Logout",
                 "<div class='msg'>"
                 "You have been logged out successfully."
                 "</div>"
-                "<p><a href='/login'>Login again</a></p>"
+                "<p>Use the Login button above to sign in again.</p>"
             );
         }
 
@@ -1543,6 +1909,36 @@ string route(
         );
     }
 
+    if (path == "/session")
+    {
+        map<string,string> params =
+            parseQuery(rawRequest);
+
+        string sessionId =
+            params.count("session_id")
+            ? params["session_id"]
+            : tlSessionId;
+
+        int userId =
+            getSessionUserId(sessionId);
+
+        if (userId == 0)
+        {
+            return pageWrapper(
+                "Login Required",
+                "<div class='err'>"
+                "Please log in first."
+                "</div>"
+                "<p>Use the Login button above.</p>"
+            );
+        }
+
+        return buildSessionPage(
+            sessionId,
+            userId
+        );
+    }
+
     if (path == "/cart")
     {
         map<string,string> params =
@@ -1551,7 +1947,7 @@ string route(
         string sessionId =
             params.count("session_id")
             ? params["session_id"]
-            : "";
+            : tlSessionId;
 
         int userId =
             getSessionUserId(sessionId);
@@ -1581,7 +1977,7 @@ string route(
         string sessionId =
             params.count("session_id")
             ? params["session_id"]
-            : "";
+            : tlSessionId;
 
         int userId =
             getSessionUserId(sessionId);
@@ -1636,7 +2032,7 @@ string route(
         string sessionId =
             params.count("session_id")
             ? params["session_id"]
-            : "";
+            : tlSessionId;
 
         int userId =
             getSessionUserId(sessionId);
@@ -1683,7 +2079,7 @@ string route(
         string sessionId =
             params.count("session_id")
             ? params["session_id"]
-            : "";
+            : tlSessionId;
 
         int userId =
             getSessionUserId(sessionId);
@@ -1713,7 +2109,7 @@ string route(
         string sessionId =
             params.count("session_id")
             ? params["session_id"]
-            : "";
+            : tlSessionId;
 
         int userId =
             getSessionUserId(sessionId);
@@ -1737,16 +2133,35 @@ string route(
 
     if (path == "/")
     {
-        string b =
-            "<p>Welcome! Try "
-            "<a href='/signup'>Signup</a> or "
-            "<a href='/login'>Login</a>, "
-            "or browse "
-            "<a href='/products'>Products</a>.</p>";
+        ostringstream b;
+
+        if (isLoggedIn())
+        {
+            b << "<p>Welcome back, <b>"
+              << htmlEscape(tlUserName)
+              << "</b>.</p>"
+                 "<p>"
+                 "<a class='navbtn' href='/products'>Browse Products</a>"
+                 "<a class='navbtn' href='/cart'>View Cart</a>"
+                 "<a class='navbtn' href='/orders'>My Orders</a>"
+                 "</p>";
+        }
+        else
+        {
+            b << "<p>Welcome! Browse the catalogue, or sign in to "
+                 "start a cart.</p>"
+                 "<p>"
+                 "<a class='navbtn' href='/products'>Browse Products</a>"
+                 "<button class='navbtn' "
+                 "onclick=\"openModal('loginModal')\">Login</button>"
+                 "<button class='navbtn' "
+                 "onclick=\"openModal('signupModal')\">Sign Up</button>"
+                 "</p>";
+        }
 
         return pageWrapper(
             "Home",
-            b
+            b.str()
         );
     }
 
@@ -1870,6 +2285,11 @@ void worker(int workerId)
              << path
              << endl;
 
+        // Fresh request context for this connection.
+        tlSessionId.clear();
+        tlUserName.clear();
+        tlExtraHeaders.clear();
+
         string body =
             route(
                 method,
@@ -1888,7 +2308,8 @@ void worker(int workerId)
         string resp =
             makeHttpResponse(
                 body,
-                status
+                status,
+                tlExtraHeaders
             );
 
         send(
