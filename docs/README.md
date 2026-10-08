@@ -51,7 +51,7 @@ Client → TCP/HTTP → Main Thread (accept loop) → Request Queue → Thread P
 
 ## Team
 
-- Shoyam Bishnoi (Lead)
+- Shoyam Bishnoi (Leader)
 - Sneha Negi
 - Ashutosh
 - Aradhana K. Jaiswal
