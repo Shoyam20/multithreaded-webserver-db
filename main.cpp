@@ -541,11 +541,8 @@ string buildProductsPage()
     lock_guard<mutex> lock(dbMutex);
 
     const char* q =
-        "SELECT p.product_id, p.name, p.description, p.price, p.stock, "
-        "c.category_name "
-        "FROM products p "
-        "JOIN categories c ON p.category_id=c.category_id "
-        "ORDER BY p.product_id";
+    "SELECT product_id, name, description, price, stock, category "
+    "FROM products ORDER BY product_id";
 
     if (mysql_query(dbConn, q))
         return pageWrapper(
@@ -1018,7 +1015,7 @@ string addCartItem(
     if (cartId == 0)
         return pageWrapper(
             "Cart",
-            "<div class='err'>Unable to create cart.</div>"
+            "<div class='err'>Introducing soon....</div>"
         );
 
     string q =
