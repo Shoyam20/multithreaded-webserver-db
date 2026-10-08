@@ -6,7 +6,7 @@ This project was built to explore how Operating Systems concepts (threads, synch
 
 ## Features
 
-- Custom TCP socket server handling raw HTTP requests (GET/POST/PUT/DELETE)
+- Custom TCP socket server handling raw HTTP requests (GET/POST/PUT/DELETE )
 - Thread pool with a shared request queue, synchronized via mutex + condition variable / semaphore
 - Producer-consumer architecture: the main thread accepts connections and enqueues work; worker threads dequeue and process it
 - Transactional order placement with stock validation as an atomic critical section (prevents overselling under concurrent load)
