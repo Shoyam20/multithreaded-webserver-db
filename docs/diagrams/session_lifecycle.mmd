@@ -1,0 +1,31 @@
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant S as Server
+    participant DB as MySQL
+
+    Note over B,DB: 1. LOGIN
+    B->>S: POST /login (email, password)
+    S->>DB: SELECT user_id, name, password FROM users WHERE email=...
+    DB-->>S: user_id = 7, password matches
+    S->>S: generateSessionId() gives 32 random hex chars
+    S->>DB: INSERT INTO user_sessions (session_id, user_id)
+    Note right of DB: is_active=TRUE, login_time=NOW (defaults)
+    S-->>B: 200 OK + Set-Cookie session_id=ab12... HttpOnly SameSite=Lax
+
+    Note over B,DB: 2. EVERY LATER REQUEST
+    B->>S: GET /cart (browser auto-sends Cookie session_id=ab12...)
+    S->>DB: SELECT user_id FROM user_sessions WHERE session_id=... AND is_active=TRUE
+    DB-->>S: user_id = 7
+    S->>DB: UPDATE user_sessions SET last_activity=NOW
+    S-->>B: cart page for user 7
+
+    Note over B,DB: 3. LOGOUT
+    B->>S: GET /logout
+    S->>DB: UPDATE user_sessions SET is_active=FALSE, logout_time=NOW
+    S-->>B: Set-Cookie session_id= (expired 1970) so the browser deletes it
+
+    Note over B,DB: 4. AFTER LOGOUT
+    B->>S: GET /cart (no cookie, or old id)
+    S->>DB: lookup finds no active row
+    S-->>B: Please log in first

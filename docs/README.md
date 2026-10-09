@@ -13,6 +13,10 @@ This project was built to explore how Operating Systems concepts (threads, synch
 - Normalized MySQL schema: Users, User_Sessions, Categories, Products, Cart, Cart_Items, Orders, Order_Items, Payments
 - JSON-based request/response for a simple HTML/CSS/JS frontend
 
+## Documentation
+
+**[PROJECT_DOCUMENTATION.md](PROJECT_DOCUMENTATION.md)** ([PDF](PROJECT_DOCUMENTATION.pdf)) has everything in one place: how the server works and why, sessions, the checkout transaction, ER diagrams, data dictionary, limitations and viva Q&A.
+
 ## Architecture
 
 ![Architecture Diagram](architecture.png)
@@ -31,7 +35,7 @@ Client → TCP/HTTP → Main Thread (accept loop) → Request Queue → Thread P
 
 ## Database Schema
 
-Full ER diagrams (Chen + crow's foot), data dictionary and design notes: **[ER_DIAGRAM.md](ER_DIAGRAM.md)**
+Full ER diagrams (Chen + crow's foot), data dictionary and design notes: **[PROJECT_DOCUMENTATION.md §19](PROJECT_DOCUMENTATION.md#19-database-design-and-er-diagrams)**
 
 ![ER Diagram](er_diagram_crowsfoot.svg)
 

@@ -1,0 +1,23 @@
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant M as Main thread
+    participant W as Worker
+    participant R as route()
+    participant DB as MySQL
+
+    B->>M: TCP connect to :8080
+    M->>W: enqueue socket + signal semaphore
+    B->>W: GET /add-cart?product_id=3&quantity=2 (Cookie session_id=ab12...)
+    W->>W: recv() until end of headers, then body (Content-Length)
+    W->>W: parseMethod = GET, parsePath = /add-cart
+    W->>R: route(method, path, raw)
+    R->>DB: SELECT user_id FROM user_sessions WHERE session_id=... AND is_active
+    DB-->>R: user_id = 7 (and last_activity updated)
+    R->>DB: SELECT name FROM users WHERE user_id=7
+    R->>R: path is /add-cart, so call addCartItem(7, 3, 2)
+    R->>DB: find ACTIVE cart, check stock, INSERT or UPDATE cart_items
+    DB-->>R: OK
+    R-->>W: HTML page "Product added to cart"
+    W->>B: HTTP/1.1 200 OK + HTML
+    W->>W: closesocket(), then wait for the next request

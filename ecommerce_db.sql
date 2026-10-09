@@ -2,7 +2,7 @@ CREATE DATABASE IF NOT EXISTS ecommerce_db;
 USE ecommerce_db;
 
 -- 1. USERS
---Stores information about registered customers.
+-- Stores information about registered customers.
 CREATE TABLE IF NOT EXISTS users (
     user_id    INT AUTO_INCREMENT PRIMARY KEY,
     email      VARCHAR(100) NOT NULL UNIQUE,
@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS cart_items (
     UNIQUE(cart_id, product_id)
 );
 
---- 7. ORDERS
+-- 7. ORDERS
 -- Stores orders created after checkout.
 -- A cart is converted into an order during checkout.
 -- The cart_id keeps track of which cart created the order.

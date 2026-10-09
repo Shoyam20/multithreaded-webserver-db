@@ -1,0 +1,14 @@
+sequenceDiagram
+    participant Main as Main thread (producer)
+    participant Q as requestQueue
+    participant S as Semaphore (count)
+    participant W as Worker thread (consumer)
+
+    Note over W: Startup - worker calls WaitForSingleObject, count is 0, so it sleeps
+    Main->>Main: accept() returns new client socket
+    Main->>Q: lock queueMutex, push(socket), unlock
+    Main->>S: ReleaseSemaphore (count +1)
+    S-->>W: wake up (count -1)
+    W->>Q: lock queueMutex, front() + pop(), unlock
+    W->>W: read, route, respond, closesocket
+    W->>S: WaitForSingleObject again (sleep until next request)

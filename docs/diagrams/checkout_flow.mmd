@@ -1,0 +1,16 @@
+flowchart TD
+    A[START TRANSACTION] --> B[SELECT cart items + product stock<br/>FOR UPDATE - lock rows]
+    B --> C{"Each item:<br/>qty positive and not more than stock?"}
+    C -- no --> X[ROLLBACK<br/>Insufficient stock]
+    C -- yes --> D{Cart empty?}
+    D -- yes --> X2[ROLLBACK<br/>Your cart is empty]
+    D -- no --> E[INSERT orders<br/>status PLACED, total]
+    E --> F["For each item:<br/>INSERT order_items with price snapshot<br/>UPDATE products SET stock = stock - qty<br/>only if enough stock"]
+    F --> G{Exactly 1 row updated?}
+    G -- no --> X3[ROLLBACK<br/>Stock update failed]
+    G -- yes --> H[INSERT payments<br/>COD, PENDING]
+    H --> I[DELETE cart_items]
+    I --> J[UPDATE cart SET status = CHECKED_OUT]
+    J --> K[COMMIT]
+    K -- fails --> X4[ROLLBACK<br/>Commit failed]
+    K -- ok --> L[Show: Order placed, Order ID, Total]
