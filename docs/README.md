@@ -10,7 +10,7 @@ This project was built to explore how Operating Systems concepts (threads, synch
 - Thread pool with a shared request queue, synchronized via mutex + condition variable / semaphore
 - Producer-consumer architecture: the main thread accepts connections and enqueues work; worker threads dequeue and process it
 - Transactional order placement with stock validation as an atomic critical section (prevents overselling under concurrent load)
-- Normalized MySQL schema: Users, Categories, Products, Cart, Cart_Items, Orders, Order_Items, Order_Status_History
+- Normalized MySQL schema: Users, User_Sessions, Categories, Products, Cart, Cart_Items, Orders, Order_Items, Payments
 - JSON-based request/response for a simple HTML/CSS/JS frontend
 
 ## Architecture
@@ -31,16 +31,21 @@ Client → TCP/HTTP → Main Thread (accept loop) → Request Queue → Thread P
 
 ## Database Schema
 
-| Table | Primary Key | Foreign Key(s) |
-|---|---|---|
-| Users | user_id | — |
-| Categories | category_id | — |
-| Products | product_id | category_id |
-| Cart | cart_id | user_id |
-| Cart_Items | cart_item_id | cart_id |
-| Orders | order_id | user_id |
-| Order_Items | order_item_id | order_id |
-| Order_Status_History | history_id | order_id |
+Full ER diagrams (Chen + crow's foot), data dictionary and design notes: **[ER_DIAGRAM.md](ER_DIAGRAM.md)**
+
+![ER Diagram](er_diagram_crowsfoot.svg)
+
+| Table | Primary Key | Foreign Key(s) | Unique |
+|---|---|---|---|
+| users | user_id | — | email |
+| user_sessions | session_id | user_id | — |
+| categories | category_id | — | category_name |
+| products | product_id | category_id | — |
+| cart | cart_id | user_id | — |
+| cart_items | cart_item_id | cart_id, product_id | (cart_id, product_id) |
+| orders | order_id | user_id, cart_id | cart_id |
+| order_items | order_item_id | order_id, product_id | (order_id, product_id) |
+| payments | payment_id | order_id | order_id |
 
 ## Concurrency Design 
 
