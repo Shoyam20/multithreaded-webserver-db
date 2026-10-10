@@ -79,24 +79,90 @@ CREATE TABLE IF NOT EXISTS products (
 );
 
 -- SAMPLE PRODUCTS
-INSERT INTO products
-(name, description, price, stock, category_id)
+INSERT INTO products(name, description, price, stock, category_id)
 VALUES
-('Wireless Mouse','Ergonomic 2.4GHz optical mouse',599.00, 45, 1),
-('Laptop Stand','Aluminium adjustable laptop stand',899.00, 50, 2),
-('Bluetooth Speaker','Portable speaker with 12-hour battery',1899.00, 15, 3),
-('Smartphone X1','6.5 inch display with 128GB storage',24999.00, 25, 4),
-('Gaming Laptop','15.6 inch laptop with dedicated graphics',74999.00, 10, 5),
-('Desktop PC','Core i5 desktop computer',52999.00, 12, 6),
-('DSLR Camera','24MP DSLR camera with 18-55mm lens',54999.00, 8, 7),
-('Gaming Mouse','High precision RGB gaming mouse',1499.00, 35, 8),
-('Women Casual Kurti','Printed cotton casual kurti',999.00, 45, 9),
-('Casual Sneakers','Comfortable everyday sneakers',2499.00, 25, 10),
-('Database Management Systems','Fundamentals of DBMS and SQL',799.00, 30, 11),
-('Electric Kettle','1.5 litre stainless steel electric kettle',1299.00, 25, 12),
-('Face Wash','Gentle face cleanser for daily use',299.00, 50, 13),
-('Yoga Mat','Anti-slip exercise and yoga mat',799.00, 40, 14),
-('Building Blocks','Creative building block set for children',899.00, 25, 15);
+-- 1. Electronics (category_id = 1)
+('Smart LED Bulb', 'WiFi-enabled LED bulb with app control', 499.00, 40, 1),
+('Portable SSD', '500GB portable solid state drive', 3999.00, 15, 1),
+('Power Bank 20000mAh', 'Fast charging power bank with USB-C', 1799.00, 30, 1),
+('Smart Plug', 'WiFi smart plug with energy monitoring', 799.00, 25, 1),
+
+-- 2. Accessories (category_id = 2)
+('USB-C Fast Charger', '30W fast charging wall adapter', 899.00, 45, 2),
+('Magnetic Phone Holder', 'Adjustable magnetic mobile holder', 499.00, 35, 2),
+('Laptop Backpack', 'Water-resistant backpack for laptops', 1499.00, 20, 2),
+('Wireless Charging Pad', 'Qi-compatible wireless charging pad', 999.00, 25, 2),
+
+-- 3. Audio (category_id = 3)
+('TWS Wireless Earbuds', 'Bluetooth earbuds with charging case', 1499.00, 40, 3),
+('Bluetooth Party Speaker', 'Portable wireless speaker with deep bass', 2499.00, 18, 3),
+('ANC Headphones', 'Wireless headphones with noise cancellation', 3499.00, 15, 3),
+('Neckband Earphones', 'Wireless neckband with long battery life', 999.00, 30, 3),
+
+-- 4. Mobile Phones (category_id = 4)
+('Smartphone X3', '128GB smartphone with high-resolution camera', 18999.00, 12, 4),
+('5G Smartphone Y5', '5G smartphone with 256GB storage', 24999.00, 10, 4),
+('Clear Phone Case', 'Transparent shockproof phone case', 299.00, 60, 4),
+('Privacy Screen Protector', 'Privacy glass screen protector', 349.00, 50, 4),
+
+-- 5. Laptops (category_id = 5)
+('Student Laptop Pro', 'Laptop for study and everyday productivity', 45999.00, 8, 5),
+('Laptop Cooling Stand', 'Adjustable laptop stand with cooling fan', 1299.00, 20, 5),
+('Laptop Privacy Screen', 'Anti-glare privacy screen for laptops', 999.00, 15, 5),
+
+-- 6. Computers (category_id = 6)
+('Mechanical RGB Keyboard', 'Mechanical keyboard with RGB lighting', 2499.00, 20, 6),
+('Wireless Gaming Mouse', 'Rechargeable mouse with adjustable DPI', 1599.00, 25, 6),
+('Full HD Webcam', '1080p webcam for meetings and streaming', 1799.00, 15, 6),
+
+-- 7. Cameras (category_id = 7)
+('Action Camera', 'Compact camera for travel and outdoor recording', 7999.00, 8, 7),
+('Flexible Camera Tripod', 'Portable adjustable tripod for cameras', 899.00, 20, 7),
+('Ring Light with Stand', 'LED ring light for videos and online meetings', 1199.00, 25, 7),
+
+-- 8. Gaming (category_id = 8)
+('Wireless Game Controller', 'Wireless controller for PC gaming', 1999.00, 15, 8),
+('Gaming Headset Pro', 'Over-ear gaming headset with microphone', 2299.00, 18, 8),
+('Extended Gaming Mouse Pad', 'Large non-slip mouse pad for gaming desks', 699.00, 30, 8),
+('Gaming Desk Light', 'RGB ambient light for gaming setups', 999.00, 20, 8),
+
+-- 9. Clothing (category_id = 9)
+('Oversized Graphic T-Shirt', 'Casual oversized cotton graphic T-shirt', 599.00, 40, 9),
+('Wide-Leg Jeans', 'Relaxed-fit denim jeans for everyday wear', 1399.00, 25, 9),
+('Cotton Co-ord Set', 'Comfortable matching casual clothing set', 1299.00, 20, 9),
+('Lightweight Hoodie', 'Soft casual hoodie for everyday use', 1199.00, 22, 9),
+
+-- 10. Shoes (category_id = 10)
+('Chunky Sneakers', 'Casual chunky sole everyday sneakers', 1999.00, 20, 10),
+('Running Shoes Pro', 'Lightweight cushioned running shoes', 2499.00, 18, 10),
+('Slides Sandals', 'Comfortable lightweight casual slides', 499.00, 35, 10),
+
+-- 11. Books (category_id = 11)
+('Python Programming Guide', 'Beginner-friendly Python programming book', 599.00, 20, 11),
+('Data Science Handbook', 'Introduction to data analysis and visualization', 799.00, 15, 11),
+('AI and Machine Learning', 'Introduction to artificial intelligence concepts', 899.00, 12, 11),
+
+-- 12. Home & Kitchen (category_id = 12)
+('Digital Air Fryer', 'Compact air fryer for everyday cooking', 4999.00, 10, 12),
+('Electric Coffee Frother', 'Handheld milk and coffee frother', 699.00, 25, 12),
+('Rechargeable Table Lamp', 'Dimmable LED lamp for study desks', 799.00, 30, 12),
+('Kitchen Storage Organizer', 'Multi-purpose kitchen storage rack', 999.00, 20, 12),
+
+-- 13. Beauty & Personal Care (category_id = 13)
+('Daily Sunscreen SPF 50', 'Lightweight sunscreen for daily use', 499.00, 35, 13),
+('Hydrating Face Serum', 'Hydrating facial serum for skincare routines', 599.00, 25, 13),
+('Electric Grooming Trimmer', 'Rechargeable trimmer for personal grooming', 1299.00, 18, 13),
+('Lip Care Balm Set', 'Everyday lip care balm multipack', 299.00, 40, 13),
+
+-- 14. Sports & Fitness (category_id = 14)
+('Smart Fitness Band', 'Activity tracker with step counting', 1999.00, 15, 14),
+('Resistance Band Set', 'Exercise resistance bands for home workouts', 499.00, 30, 14),
+('Insulated Water Bottle', 'Reusable insulated stainless steel bottle', 799.00, 25, 14),
+
+-- 15. Toys & Games (category_id = 15)
+('STEM Building Kit', 'Educational construction kit for children', 999.00, 15, 15),
+('Family Board Game', 'Strategy board game for family game nights', 699.00, 20, 15);
+
 
 -- 5. CART
 -- Stores shopping carts belonging to users.
