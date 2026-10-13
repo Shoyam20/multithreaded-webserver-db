@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "c:/Users/shoya/Downloads/OSDBMS_DOCS/pdb/pdb",
-      "program": "c:/Users/shoya/Downloads/OSDBMS_DOCS/pdb/pdb/build/Debug/outDebug",
+      "cwd": "d:/pdb",
+      "program": "d:/pdb/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [
