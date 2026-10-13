@@ -1,16 +1,7 @@
 <div class="tablewrap">
 <table>
   <tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th>Orders</th></tr>
-  {{#each users}}
-    <tr>
-      <td>{{id}}</td>
-      <td>{{name}}</td>
-      <td>{{email}}</td>
-      <td><span class="pill {{#if isAdmin}}green{{/if}}">{{role}}</span></td>
-      <td>{{joined}}</td>
-      <td>{{orders}}</td>
-    </tr>
-  {{/each}}
+  {{{rows}}}
 </table>
 </div>
 <p class="muted">Passwords are stored as salted hashes and are never shown. To make someone an admin run <code>server.exe --make-admin their@email.com</code>.</p>

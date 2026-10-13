@@ -1,0 +1,4 @@
+<form method="POST" action="/orders/cancel" class="inline" onsubmit="return confirm('Cancel order #{{id}}? The items go back to stock and the payment is cancelled.')">
+  <input type="hidden" name="id" value="{{id}}">
+  <button class="btn danger" type="submit">Cancel order</button>
+</form>

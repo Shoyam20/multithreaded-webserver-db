@@ -5,30 +5,14 @@
     <form class="search" action="/products" method="GET">
       <select name="category" aria-label="Category">
         <option value="">All</option>
-        {{#each categories}}<option value="{{id}}">{{name}}</option>{{/each}}
+        {{{categoryOptions}}}
       </select>
       <input name="q" placeholder="Search products" value="{{search}}" aria-label="Search">
       <button type="submit" aria-label="Search">🔍</button>
     </form>
 
     <nav class="hnav">
-      {{#if loggedIn}}
-        <div class="dd">
-          <button class="hlink" type="button"><small>Hello, {{userName}}</small><b>Account ▾</b></button>
-          <div class="ddmenu">
-            {{#if isAdmin}}<a href="/admin">🛠️ Admin panel</a>{{/if}}
-            <a href="/orders">📦 My orders</a>
-            <a href="/cart">🛒 My cart</a>
-            <a href="/sessions">🔐 My sessions</a>
-            <a href="/logout">🚪 Sign out</a>
-          </div>
-        </div>
-        <a class="hlink" href="/orders"><small>Returns &amp;</small><b>Orders</b></a>
-      {{else}}
-        <button class="hlink" type="button" onclick="openModal('loginModal')"><small>Hello, guest</small><b>Sign in</b></button>
-        <button class="hlink" type="button" onclick="openModal('signupModal')"><small>New here?</small><b>Sign up</b></button>
-      {{/if}}
-
+      {{{accountMenu}}}
       <a class="hlink cartlink" href="/cart"><span class="ico">🛒</span><span class="badge">{{cartCount}}</span><b>Cart</b></a>
     </nav>
   </div>
@@ -38,8 +22,8 @@
       <a class="hot" href="/products">☰ All products</a>
       <a href="/products?sort=price_asc&max=1000">🔥 Under ₹1,000</a>
       <a href="/products?sort=newest">✨ New</a>
-      {{#each categories}}<a href="/products?category={{id}}">{{icon}} {{name}}</a>{{/each}}
-      {{#if isAdmin}}<a href="/admin">🛠️ Admin</a>{{/if}}
+      {{{categoryLinks}}}
+      {{{adminLink}}}
     </div>
   </div>
 </header>

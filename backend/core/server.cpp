@@ -1,5 +1,8 @@
 #include <winsock2.h>
+#include <cstring>
 #include "server.h"
+#include "http.h"
+#include "../app.h"
 #include <condition_variable>
 #include <iostream>
 #include <mutex>
@@ -9,20 +12,18 @@
 
 using namespace std;
 
-// ------------------------------------------------------------
-//  The accept loop puts new connections on a queue; worker threads take
-//  them off one at a time and handle them.
-// ------------------------------------------------------------
-static queue<SOCKET>      pending;
-static mutex              pendingMutex;
-static condition_variable pendingReady;
+// ---- The thread pool --------------------------------------------------------------
+// The main thread only accepts connections and puts them on this queue.
+// The worker threads take connections off the queue, one each, and handle them.
+static queue<SOCKET>      pending;          // connections waiting for a worker
+static mutex              pendingMutex;     // protects 'pending'
+static condition_variable pendingReady;     // wakes a sleeping worker when 'pending' has work
 static mutex              printMutex;       // so lines printed by different workers do not mix
 
 static const size_t MAX_HEADER_BYTES = 64 * 1024;
 static const size_t MAX_BODY_BYTES   = 1024 * 1024;
 
-
-// Read the whole HTTP request (headers + body) from the socket.
+// Reads the whole HTTP request (headers, then the body if there is one) from the socket.
 static bool readRequest(SOCKET sock, string& raw)
 {
     char buffer[8192];
@@ -38,10 +39,10 @@ static bool readRequest(SOCKET sock, string& raw)
         raw.append(buffer, n);
     }
 
-    size_t need = contentLengthOf(raw.substr(0, headerEnd));
-    if (need > MAX_BODY_BYTES) return false;
+    size_t bodyLength = contentLengthOf(raw.substr(0, headerEnd));
+    if (bodyLength > MAX_BODY_BYTES) return false;
 
-    while (raw.size() - (headerEnd + 4) < need)
+    while (raw.size() - (headerEnd + 4) < bodyLength)
     {
         int n = recv(sock, buffer, sizeof(buffer), 0);
         if (n <= 0) return false;
@@ -52,6 +53,7 @@ static bool readRequest(SOCKET sock, string& raw)
     return true;
 }
 
+// Sends all the bytes (send() may send only part of them at once).
 static void sendAll(SOCKET sock, const string& data)
 {
     size_t sent = 0;
@@ -64,7 +66,8 @@ static void sendAll(SOCKET sock, const string& data)
     }
 }
 
-static void worker(int id, RequestHandler handler)
+// The code every worker thread runs, forever: wait for a connection, answer it, repeat.
+static void worker(int id)
 {
     while (true)
     {
@@ -72,7 +75,10 @@ static void worker(int id, RequestHandler handler)
 
         {
             unique_lock<mutex> lock(pendingMutex);
-            pendingReady.wait(lock, [] { return !pending.empty(); });
+
+            while (pending.empty())             // sleep until the main thread adds a connection
+                pendingReady.wait(lock);
+
             client = pending.front();
             pending.pop();
         }
@@ -86,7 +92,7 @@ static void worker(int id, RequestHandler handler)
             continue;
         }
 
-        // The one line that shows which worker thread took this request.
+        // The one line that shows which worker took this request.
         {
             lock_guard<mutex> lock(printMutex);
             cout << "[Worker " << id << "] " << req.method << " " << req.path << endl;
@@ -96,7 +102,7 @@ static void worker(int id, RequestHandler handler)
 
         try
         {
-            res = handler(req);
+            res = handleRequest(req);           // all the shop logic is in app.cpp and below
         }
         catch (const exception& e)
         {
@@ -105,11 +111,12 @@ static void worker(int id, RequestHandler handler)
         }
 
         sendAll(client, buildHttpResponse(res));
-        closesocket(client);
+        closesocket(client);                    // one request per connection
     }
 }
 
-int runServer(int port, int workerCount, RequestHandler handler)
+// Opens the socket, starts the workers, then accepts connections forever.
+int runServer(int port, int workerCount)
 {
     WSADATA wsa;
 
@@ -127,15 +134,15 @@ int runServer(int port, int workerCount, RequestHandler handler)
         return 1;
     }
 
-    sockaddr_in addr{};
+    sockaddr_in addr;
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = INADDR_ANY;
     addr.sin_port = htons((u_short)port);
+    memset(addr.sin_zero, 0, sizeof(addr.sin_zero));
 
     if (bind(listener, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
     {
-        cout << "Bind failed! Is another copy of the server already running on port "
-             << port << "?" << endl;
+        cout << "Bind failed! Is another copy of the server already running on port " << port << "?" << endl;
         return 1;
     }
 
@@ -145,13 +152,14 @@ int runServer(int port, int workerCount, RequestHandler handler)
         return 1;
     }
 
-    cout << "Server running on http://localhost:" << port << endl;
+    cout << "Server running on http://localhost:" << port << "  (" << workerCount << " worker threads)" << endl;
 
     vector<thread> workers;
 
-    for (int i = 0; i < workerCount; i++)
-        workers.emplace_back(worker, i + 1, handler);
+    for (int i = 1; i <= workerCount; i++)
+        workers.push_back(thread(worker, i));
 
+    // The main thread's only job from now on: accept a connection, queue it, wake a worker.
     while (true)
     {
         SOCKET client = accept(listener, nullptr, nullptr);

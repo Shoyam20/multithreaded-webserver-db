@@ -1,92 +1,95 @@
 #include "database.h"
 #include "../config.h"
+#include <cstdlib>
 #include <iostream>
-#include <vector>
 
 using namespace std;
 
-Database db;
+std::mutex dbMutex;
+static MYSQL* conn = nullptr;
 
-bool Database::connect()
+string col(const Row& row, const string& name)
 {
-    conn_ = mysql_init(nullptr);
+    Row::const_iterator it = row.find(name);
+    return (it == row.end()) ? "" : it->second;
+}
 
-    if (!conn_)
+// Opens the connection to MySQL. The password is read from the environment, not from the code.
+bool dbConnect()
+{
+    const char* password = getenv("ECOM_DB_PASS");
+    if (password == nullptr) password = "";
+
+    conn = mysql_init(nullptr);
+
+    if (!conn)
     {
         cout << "[DB] mysql_init failed!" << endl;
         return false;
     }
 
-    if (!mysql_real_connect(conn_, config::dbHost.c_str(), config::dbUser.c_str(),
-                            config::dbPass.c_str(), config::dbName.c_str(),
-                            config::dbPort, nullptr, 0))
+    if (!mysql_real_connect(conn, DB_HOST, DB_USER, password, DB_NAME, DB_PORT, nullptr, 0))
     {
-        cout << "[DB] Connection failed: " << mysql_error(conn_) << endl;
+        cout << "[DB] Connection failed: " << mysql_error(conn) << endl;
         cout << "[DB] Is MySQL running, and is the ECOM_DB_PASS environment variable set to your MySQL password?" << endl;
         return false;
     }
 
-    mysql_set_character_set(conn_, "utf8mb4");
+    mysql_set_character_set(conn, "utf8mb4");
     cout << "[DB] Connected to MySQL successfully." << endl;
     return true;
 }
 
-void Database::disconnect()
+void dbClose()
 {
-    if (conn_) mysql_close(conn_);
-    conn_ = nullptr;
+    if (conn) mysql_close(conn);
+    conn = nullptr;
 }
 
-// Run one SQL statement and return its rows / error.
-Result Database::run(const string& sql)
+// Runs one SQL statement. For a SELECT the rows are copied into result.rows.
+Result dbRun(const string& sql)
 {
-    lock_guard<recursive_mutex> lock(mutex_);
-
     Result result;
 
-    if (mysql_query(conn_, sql.c_str()))
+    if (mysql_query(conn, sql.c_str()))
     {
-        result.error = mysql_error(conn_);
+        result.error = mysql_error(conn);
         return result;
     }
 
     result.ok = true;
 
-    MYSQL_RES* res = mysql_store_result(conn_);
+    MYSQL_RES* res = mysql_store_result(conn);
 
-    if (!res)
+    if (!res)   // not a SELECT: INSERT / UPDATE / DELETE / START TRANSACTION ...
     {
-        // Not a SELECT (INSERT / UPDATE / DELETE ...)
-        result.affectedRows = (long long)mysql_affected_rows(conn_);
-        result.insertId = (long long)mysql_insert_id(conn_);
+        result.affectedRows = (long long)mysql_affected_rows(conn);
+        result.insertId = (long long)mysql_insert_id(conn);
         return result;
     }
 
-    unsigned int n = mysql_num_fields(res);
+    unsigned int columnCount = mysql_num_fields(res);
     MYSQL_FIELD* fields = mysql_fetch_fields(res);
 
-    for (unsigned int i = 0; i < n; i++)
-        result.columns.push_back(fields[i].name);
-
-    MYSQL_ROW row;
-
-    while ((row = mysql_fetch_row(res)))
+    MYSQL_ROW data;
+    while ((data = mysql_fetch_row(res)))
     {
-        Row r;
+        Row row;
 
-        for (unsigned int i = 0; i < n; i++)
-            r[result.columns[i]] = row[i] ? row[i] : "";
+        for (unsigned int i = 0; i < columnCount; i++)
+            row[fields[i].name] = data[i] ? data[i] : "";
 
-        result.rows.push_back(r);
+        result.rows.push_back(row);
     }
 
     mysql_free_result(res);
     return result;
 }
 
-Rows Database::rows(const string& sql)
+// Like dbRun for a SELECT, but returns only the rows (an error gives an empty list).
+Rows dbRows(const string& sql)
 {
-    Result r = run(sql);
+    Result r = dbRun(sql);
 
     if (!r.ok)
         cout << "[DB] Query failed: " << r.error << endl;
@@ -94,36 +97,11 @@ Rows Database::rows(const string& sql)
     return r.rows;
 }
 
-string Database::quote(const string& text)
+// Puts text between quotes and escapes dangerous characters (prevents SQL injection).
+string dbQuote(const string& text)
 {
-    lock_guard<recursive_mutex> lock(mutex_);
+    string buffer(text.size() * 2 + 1, '\0');
+    unsigned long length = mysql_real_escape_string(conn, &buffer[0], text.c_str(), (unsigned long)text.size());
 
-    vector<char> buf(text.size() * 2 + 1);
-    unsigned long n = mysql_real_escape_string(conn_, buf.data(), text.c_str(),
-                                               (unsigned long)text.size());
-
-    return "'" + string(buf.data(), n) + "'";
+    return "'" + buffer.substr(0, length) + "'";
 }
-
-// ------------------------------------------------------------
-//  Transaction
-// ------------------------------------------------------------
-Transaction::Transaction()
-{
-    db.run("START TRANSACTION");
-}
-
-Transaction::~Transaction()
-{
-    if (!done_) db.run("ROLLBACK");
-}
-
-void Transaction::commit()
-{
-    db.run("COMMIT");
-    done_ = true;
-}
-
-// ------------------------------------------------------------
-//  Schema upgrade: the admin panel needs users.role
-// ------------------------------------------------------------

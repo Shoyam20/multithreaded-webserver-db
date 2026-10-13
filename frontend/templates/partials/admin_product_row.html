@@ -1,0 +1,22 @@
+<tr>
+  <td>{{id}}</td>
+  <td><span class="ico">{{icon}}</span> <a href="/admin/products/edit?id={{id}}">{{name}}</a></td>
+  <td>{{categoryName}}</td>
+  <td>{{price}}</td>
+  <td>
+    <form method="POST" action="/admin/products/stock" class="inline">
+      <input type="hidden" name="id" value="{{id}}">
+      <input type="hidden" name="back" value="{{backUrl}}">
+      <input class="narrow {{lowClass}}" type="number" name="stock" min="0" value="{{stock}}">
+      <button class="btn sm" type="submit">Set</button>
+    </form>
+  </td>
+  <td class="actions">
+    <a class="btn sm ghost" href="/admin/products/edit?id={{id}}">Edit</a>
+    <form method="POST" action="/admin/products/delete" class="inline"
+          onsubmit="return confirm('Delete {{name}}? This cannot be undone.')">
+      <input type="hidden" name="id" value="{{id}}">
+      <button class="btn sm danger" type="submit">Delete</button>
+    </form>
+  </td>
+</tr>

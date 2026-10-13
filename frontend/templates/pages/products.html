@@ -2,17 +2,12 @@
   <aside class="side">
     <div class="grp">
       <h3>Categories</h3>
-      <a class="f {{#if allCategoriesActive}}on{{/if}}" href="{{allCategoriesUrl}}">All</a>
-      {{#each sideCategories}}
-        <a class="f {{#if active}}on{{/if}}" href="{{url}}"><span>{{icon}} {{name}}</span></a>
-      {{/each}}
+      {{{sideLinks}}}
     </div>
     <div class="grp">
       <h3>Price (₹)</h3>
       <form method="GET" action="/products">
-        {{#if filterCategory}}<input type="hidden" name="category" value="{{filterCategory}}">{{/if}}
-        {{#if filterSearch}}<input type="hidden" name="q" value="{{filterSearch}}">{{/if}}
-        {{#if filterSort}}<input type="hidden" name="sort" value="{{filterSort}}">{{/if}}
+        {{{hiddenFilters}}}
         <div class="pricebox">
           <input name="min" type="number" min="0" placeholder="Min" value="{{filterMin}}">
           <input name="max" type="number" min="0" placeholder="Max" value="{{filterMax}}">
@@ -24,18 +19,9 @@
 
   <section>
     <div class="toolbar">
-      <div><h1>{{heading}}</h1><span class="count">{{count}} {{countLabel}}</span></div>
-      <div class="sort">Sort:
-        {{#each sorts}}<a class="{{#if active}}on{{/if}}" href="{{url}}">{{label}}</a>{{/each}}
-      </div>
+      <div><h1>{{heading}}</h1><span class="count">{{count}}</span></div>
+      <div class="sort">Sort: {{{sortLinks}}}</div>
     </div>
-
-    {{#if products}}
-      <div class="grid">{{#each products}}{{> partials/product_card.html}}{{/each}}</div>
-    {{else}}
-      <div class="empty"><div class="big">🔎</div><h2>No products found</h2>
-        <p>Try a different keyword or clear the filters.</p>
-        <a class="btn" href="/products">Clear filters</a></div>
-    {{/if}}
+    {{{results}}}
   </section>
 </div>

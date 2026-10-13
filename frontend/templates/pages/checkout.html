@@ -16,17 +16,7 @@
 
     <div class="panel">
       <h2>3. Review items ({{units}})</h2>
-      {{#each lines}}
-        <div class="line">
-          <div class="thumb" style="background:{{tint}}">{{icon}}</div>
-          <div>
-            <div class="nm">{{name}}</div>
-            <div class="sub">Qty {{quantity}} × {{price}}</div>
-            {{#if overStock}}<div class="stk no">Only {{stock}} in stock</div>{{/if}}
-          </div>
-          <div class="rt">{{subtotal}}</div>
-        </div>
-      {{/each}}
+      {{{lines}}}
     </div>
   </div>
 
@@ -35,14 +25,7 @@
     <div class="sumrow"><span>Items ({{units}})</span><span>{{total}}</span></div>
     <div class="sumrow"><span>Delivery</span><span class="free">FREE</span></div>
     <div class="sumrow total"><span>Order total</span><span>{{total}}</span></div>
-
-    {{#if stockProblem}}
-      <div class="err">Some items exceed available stock. <a href="/cart">Fix your cart</a> before ordering.</div>
-    {{else}}
-      <form method="POST" action="/checkout/place" class="gap">
-        <button class="btn accent lg block" type="submit">Place order (COD)</button>
-      </form>
-    {{/if}}
+    {{{placeOrderBox}}}
     <a class="btn ghost block gap" href="/cart">Back to cart</a>
   </aside>
 </div>

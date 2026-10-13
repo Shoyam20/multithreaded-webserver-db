@@ -5,96 +5,119 @@
 
 using namespace std;
 
-static const char* ORDER_STATUSES[]   = { "PLACED", "SHIPPED", "DELIVERED", "CANCELLED" };
+static const char* ORDER_STATUSES[] = { "PLACED", "SHIPPED", "DELIVERED", "CANCELLED" };
 
 // All orders, with tabs to filter by status.
 Response adminOrders(Request& req)
 {
+    if (!req.user.isAdmin()) return Response::redirect(req.user.loggedIn() ? "/?notice=forbidden" : "/login?notice=needlogin");
+
     string status = req.param("status");
-    if (!status.empty() && !isValidOrderStatus(status)) status = "";
+    if (!isValidOrderStatus(status)) status = "";
 
-    OrderFilter filter;
-    filter.status = status;
-    filter.limit = 200;
+    // the tabs: All, PLACED, SHIPPED, DELIVERED, CANCELLED
+    string tabs = string("<a class=\"") + (status.empty() ? "on" : "") + "\" href=\"/admin/orders\">All</a>";
 
-    Data page;
+    for (int i = 0; i < 4; i++)
+        tabs += string("<a class=\"") + (status == ORDER_STATUSES[i] ? "on" : "") +
+                "\" href=\"/admin/orders?status=" + ORDER_STATUSES[i] + "\">" + ORDER_STATUSES[i] + "</a>";
 
-    for (const Row& o : listOrders(filter))
+    string rows;
+    Rows orders = listOrders(0, status, 200);
+
+    for (size_t i = 0; i < orders.size(); i++)
     {
-        Data item;
-        item.set("id", col(o, "order_id")).set("customer", col(o, "customer"));
-        item.set("email", col(o, "email")).set("date", col(o, "created_at"));
-        item.set("total", money(col(o, "total")));
-        item.set("status", col(o, "status")).set("statusClass", statusClass(col(o, "status")));
-        item.set("paymentStatus", col(o, "payment_status"));
-        item.set("paymentClass", statusClass(col(o, "payment_status")));
-        page.add("orders", item);
+        Vars row;
+        row["id"]            = col(orders[i], "order_id");
+        row["customer"]      = col(orders[i], "customer");
+        row["email"]         = col(orders[i], "email");
+        row["date"]          = col(orders[i], "created_at");
+        row["total"]         = formatMoney(col(orders[i], "total"));
+        row["status"]        = col(orders[i], "status");
+        row["statusClass"]   = statusClass(col(orders[i], "status"));
+        row["paymentStatus"] = col(orders[i], "payment_status");
+        row["paymentClass"]  = statusClass(col(orders[i], "payment_status"));
+        rows += renderTemplate("partials/admin_order_row.html", row);
     }
 
-    Data all;
-    all.set("label", "All").set("url", "/admin/orders");
-    all.flag("active", status.empty());
-    page.add("tabs", all);
+    Vars v;
+    v["tabs"]      = tabs;
+    v["rows"]      = rows;
+    v["emptyNote"] = orders.empty() ? "<p class=\"muted\">No orders in this view.</p>" : "";
 
-    for (const char* s : ORDER_STATUSES)
-    {
-        Data tab;
-        tab.set("label", s).set("url", string("/admin/orders?status=") + s);
-        tab.flag("active", status == s);
-        page.add("tabs", tab);
-    }
-
-    return renderAdminPage(req, "Orders", "admin/orders.html", "orders", page);
+    return renderAdminPage(req, "Orders", "admin/orders.html", "orders", v);
 }
 
+// One order: its items, the customer, and the form to change its status.
 Response adminOrderDetail(Request& req)
 {
+    if (!req.user.isAdmin()) return Response::redirect(req.user.loggedIn() ? "/?notice=forbidden" : "/login?notice=needlogin");
+
     int id = req.intParam("id", 0);
     Row order = getOrder(id);
 
     if (order.empty())
-        return adminMessagePage(req, "Not found", "That order does not exist.",
-                                "/admin/orders", "Back to orders");
+        return adminMessagePage(req, "Not found", "That order does not exist.", "/admin/orders", "Back to orders");
 
-    Data page;
-    page.set("id", col(order, "order_id")).set("date", col(order, "created_at"));
-    page.set("customer", col(order, "customer")).set("email", col(order, "email"));
-    page.set("total", money(col(order, "total")));
-    page.set("status", col(order, "status")).set("statusClass", statusClass(col(order, "status")));
-    page.set("paymentMethod", col(order, "payment_method"));
-    page.set("paymentStatus", col(order, "payment_status"));
-    page.set("paymentClass", statusClass(col(order, "payment_status")));
+    string itemRows;
+    Rows items = orderItems(id);
 
-    // A cancelled order is final (its stock was already returned).
-    page.flag("canChange", col(order, "status") != "CANCELLED");
-
-    for (const Row& i : orderItems(id))
+    for (size_t i = 0; i < items.size(); i++)
     {
-        Data item = productData(i);
-        item.set("quantity", col(i, "quantity"));
-        item.set("price", money(col(i, "price")));
-        item.set("subtotal", money(col(i, "subtotal")));
-        page.add("items", item);
+        Vars row;
+        row["id"]       = col(items[i], "product_id");
+        row["name"]     = col(items[i], "name");
+        row["icon"]     = categoryIcon(col(items[i], "category_name"));
+        row["quantity"] = col(items[i], "quantity");
+        row["price"]    = formatMoney(col(items[i], "price"));
+        row["subtotal"] = formatMoney(col(items[i], "subtotal"));
+        itemRows += renderTemplate("partials/admin_order_item_row.html", row);
     }
 
-    for (const char* s : ORDER_STATUSES)
+    string status = col(order, "status");
+
+    // A cancelled order is final (its stock was already returned), so it gets no form.
+    string statusForm = "<div class=\"err\">This order was cancelled and can no longer be changed.</div>";
+
+    if (status != "CANCELLED")
     {
-        Data opt;
-        opt.set("value", s).flag("selected", col(order, "status") == s);
-        page.add("statusOptions", opt);
+        string options;
+        for (int i = 0; i < 4; i++)
+            options += optionTag(ORDER_STATUSES[i], ORDER_STATUSES[i], status == ORDER_STATUSES[i]);
+
+        Vars form;
+        form["id"]      = to_string(id);
+        form["options"] = options;
+        statusForm = renderTemplate("partials/order_status_form.html", form);
     }
 
-    return renderAdminPage(req, "Order #" + to_string(id), "admin/order_detail.html", "orders", page);
+    Vars v;
+    v["id"]            = to_string(id);
+    v["date"]          = col(order, "created_at");
+    v["customer"]      = col(order, "customer");
+    v["email"]         = col(order, "email");
+    v["total"]         = formatMoney(col(order, "total"));
+    v["status"]        = status;
+    v["statusClass"]   = statusClass(status);
+    v["paymentMethod"] = col(order, "payment_method");
+    v["paymentStatus"] = col(order, "payment_status");
+    v["paymentClass"]  = statusClass(col(order, "payment_status"));
+    v["items"]         = itemRows;
+    v["statusForm"]    = statusForm;
+
+    return renderAdminPage(req, "Order #" + to_string(id), "admin/order_detail.html", "orders", v);
 }
 
+// POST: set the order status (CANCELLED returns the stock, DELIVERED marks the cash payment PAID).
 Response adminOrderStatus(Request& req)
 {
+    if (!req.user.isAdmin()) return Response::redirect(req.user.loggedIn() ? "/?notice=forbidden" : "/login?notice=needlogin");
+
     int id = req.intParam("id", 0);
     string error = updateOrderStatus(id, req.param("status"));
 
     if (!error.empty())
-        return adminMessagePage(req, "Could not update order", error,
-                                "/admin/order?id=" + to_string(id), "Back to order");
+        return adminMessagePage(req, "Could not update order", error, "/admin/order?id=" + to_string(id), "Back to order");
 
     return Response::redirect("/admin/order?id=" + to_string(id) + "&notice=status");
 }

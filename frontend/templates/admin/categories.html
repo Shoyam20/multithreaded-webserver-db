@@ -9,28 +9,6 @@
 <div class="tablewrap">
 <table>
   <tr><th>ID</th><th>Name (edit &amp; press Rename)</th><th>Products</th><th>Actions</th></tr>
-  {{#each categories}}
-    <tr>
-      <td>{{id}}</td>
-      <td>
-        <form method="POST" action="/admin/categories/save" class="inline">
-          <input type="hidden" name="id" value="{{id}}">
-          <span class="ico">{{icon}}</span>
-          <input name="name" maxlength="50" value="{{name}}" required>
-          <button class="btn sm ghost" type="submit">Rename</button>
-        </form>
-      </td>
-      <td><a href="/admin/products?category={{id}}">{{products}}</a></td>
-      <td>
-        {{#if canDelete}}
-          <form method="POST" action="/admin/categories/delete" class="inline"
-                onsubmit="return confirm('Delete category {{name}}?')">
-            <input type="hidden" name="id" value="{{id}}">
-            <button class="btn sm danger" type="submit">Delete</button>
-          </form>
-        {{else}}<span class="muted">has products</span>{{/if}}
-      </td>
-    </tr>
-  {{/each}}
+  {{{rows}}}
 </table>
 </div>

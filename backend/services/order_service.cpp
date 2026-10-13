@@ -1,218 +1,222 @@
 #include "order_service.h"
 #include "cart_service.h"
-#include <cmath>
-#include <cstdio>
 #include <cstdlib>
 
 using namespace std;
 
-// Money is added up in paise (integers) so rounding errors cannot creep in.
-static long long toPaise(const string& decimalText)
+// Undoes the open transaction and returns the error message (so errors can be written as one line).
+static string rollbackWith(const string& message)
 {
-    return llround(atof(decimalText.c_str()) * 100.0);
+    dbRun("ROLLBACK");
+    return message;
 }
 
-static string paiseToText(long long paise)
+// ---- checkout ---------------------------------------------------------------------------
+
+string placeOrder(int userId)
 {
-    char buf[32];
-    snprintf(buf, sizeof(buf), "%lld.%02lld", paise / 100, paise % 100);
-    return buf;
-}
+    lock_guard<mutex> lock(dbMutex);
 
-// ------------------------------------------------------------
-//  Checkout
-// ------------------------------------------------------------
-PlaceOrderResult placeOrder(int userId)
-{
-    PlaceOrderResult out;
+    int cartId = findActiveCart(userId, false);
+    if (cartId == 0)
+        return "You have no active cart.";
 
-    Transaction tx;      // rolls back automatically unless we reach commit()
+    string cart = to_string(cartId);
 
-    int cartId = activeCartId(userId, false);
-    if (cartId == 0) { out.error = "You have no active cart."; return out; }
+    dbRun("START TRANSACTION");
 
-    // FOR UPDATE locks these product rows so two shoppers cannot buy the last item together.
-    Rows items = db.rows(
-        "SELECT ci.product_id, ci.quantity, p.price, p.stock "
-        "FROM cart_items ci JOIN products p ON ci.product_id=p.product_id "
-        "WHERE ci.cart_id=" + to_string(cartId) + " FOR UPDATE");
+    // FOR UPDATE locks these product rows in MySQL until COMMIT / ROLLBACK.
+    Rows items = dbRows("SELECT ci.product_id, ci.quantity, p.price, p.stock "
+                        "FROM cart_items ci JOIN products p ON ci.product_id=p.product_id "
+                        "WHERE ci.cart_id=" + cart + " FOR UPDATE");
 
-    if (items.empty()) { out.error = "Your cart is empty."; return out; }
+    if (items.empty())
+        return rollbackWith("Your cart is empty.");
 
-    // 1. Check stock and add up the total.
-    long long totalPaise = 0;
-
-    for (const Row& item : items)
+    // 1. Is there enough stock for every item?
+    for (size_t i = 0; i < items.size(); i++)
     {
-        int qty   = atoi(col(item, "quantity").c_str());
-        int stock = atoi(col(item, "stock").c_str());
+        int quantity = atoi(col(items[i], "quantity").c_str());
+        int stock    = atoi(col(items[i], "stock").c_str());
 
-        if (qty <= 0 || qty > stock)
-        {
-            out.error = "Not enough stock for one or more items. Please review your cart.";
-            return out;
-        }
-
-        totalPaise += qty * toPaise(col(item, "price"));
+        if (quantity <= 0 || quantity > stock)
+            return rollbackWith("Not enough stock for one or more items. Please review your cart.");
     }
 
-    string total = paiseToText(totalPaise);
+    // 2. The order total, added up by MySQL (exact decimal arithmetic).
+    Rows sum = dbRows("SELECT SUM(ci.quantity*p.price) AS total "
+                      "FROM cart_items ci JOIN products p ON ci.product_id=p.product_id "
+                      "WHERE ci.cart_id=" + cart);
+    string total = sum.empty() ? "0" : col(sum[0], "total");
 
-    // 2. Create the order.
-    Result order = db.run("INSERT INTO orders (user_id, cart_id, total, status) VALUES (" +
-                          to_string(userId) + "," + to_string(cartId) + "," + total + ",'PLACED')");
-    if (!order.ok) { out.error = order.error; return out; }
+    // 3. Create the order.
+    Result order = dbRun("INSERT INTO orders (user_id, cart_id, total, status) VALUES (" +
+                         to_string(userId) + "," + cart + "," + total + ",'PLACED')");
+    if (!order.ok)
+        return rollbackWith(order.error);
 
-    out.orderId = order.insertId;
+    string orderId = to_string(order.insertId);
 
-    // 3. Copy each cart line into order_items and reduce the stock.
-    for (const Row& item : items)
+    // 4. For each item: copy it into order_items (with today's price) and reduce the stock.
+    for (size_t i = 0; i < items.size(); i++)
     {
-        string productId = col(item, "product_id");
-        string qty = col(item, "quantity");
+        string productId = col(items[i], "product_id");
+        string quantity  = col(items[i], "quantity");
 
-        Result line = db.run("INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (" +
-                             to_string(out.orderId) + "," + productId + "," + qty + "," +
-                             col(item, "price") + ")");
-        if (!line.ok) { out.error = line.error; return out; }
+        Result line = dbRun("INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (" +
+                            orderId + "," + productId + "," + quantity + "," + col(items[i], "price") + ")");
+        if (!line.ok)
+            return rollbackWith(line.error);
 
-        Result stock = db.run("UPDATE products SET stock=stock-" + qty +
-                              " WHERE product_id=" + productId + " AND stock>=" + qty);
-        if (!stock.ok || stock.affectedRows != 1) { out.error = "Stock update failed."; return out; }
+        // "AND stock>=quantity" means the stock can never go below zero, even if something else changed it.
+        Result stock = dbRun("UPDATE products SET stock=stock-" + quantity +
+                             " WHERE product_id=" + productId + " AND stock>=" + quantity);
+        if (!stock.ok || stock.affectedRows != 1)
+            return rollbackWith("Stock update failed.");
     }
 
-    // 4. Record the (cash on delivery) payment and close the cart.
-    Result pay = db.run("INSERT INTO payments (order_id, amount, method, status) VALUES (" +
-                        to_string(out.orderId) + "," + total + ",'COD','PENDING')");
-    if (!pay.ok) { out.error = pay.error; return out; }
+    // 5. Record the cash-on-delivery payment, then close the cart.
+    Result payment = dbRun("INSERT INTO payments (order_id, amount, method, status) VALUES (" +
+                           orderId + "," + total + ",'COD','PENDING')");
+    if (!payment.ok)
+        return rollbackWith(payment.error);
 
-    Result cart = db.run("UPDATE cart SET status='CHECKED_OUT' WHERE cart_id=" + to_string(cartId));
-    if (!cart.ok) { out.error = cart.error; return out; }
+    Result closeCart = dbRun("UPDATE cart SET status='CHECKED_OUT' WHERE cart_id=" + cart);
+    if (!closeCart.ok)
+        return rollbackWith(closeCart.error);
 
-    tx.commit();
-    out.ok = true;
-    return out;
+    dbRun("COMMIT");
+    return "";
 }
 
-// ------------------------------------------------------------
-//  Reading orders
-// ------------------------------------------------------------
-Rows listOrders(const OrderFilter& f)
+// ---- reading orders ----------------------------------------------------------------------
+
+Rows listOrders(int userId, const string& status, int limit)
 {
+    lock_guard<mutex> lock(dbMutex);
+
     string where = "WHERE 1=1";
+    if (userId > 0)        where += " AND o.user_id=" + to_string(userId);
+    if (!status.empty())   where += " AND o.status=" + dbQuote(status);
 
-    if (f.userId > 0)        where += " AND o.user_id=" + to_string(f.userId);
-    if (!f.status.empty())   where += " AND o.status=" + db.quote(f.status);
+    string sql = "SELECT o.order_id, o.total, o.status, o.created_at, u.name AS customer, u.email, "
+                 "COALESCE(p.method,'-') AS payment_method, COALESCE(p.status,'-') AS payment_status "
+                 "FROM orders o JOIN users u ON u.user_id=o.user_id "
+                 "LEFT JOIN payments p ON p.order_id=o.order_id " + where +
+                 " ORDER BY o.created_at DESC, o.order_id DESC";
 
-    string sql =
-        "SELECT o.order_id, o.total, o.status, o.created_at, u.name AS customer, u.email, "
-        "COALESCE(p.method,'-') AS payment_method, COALESCE(p.status,'-') AS payment_status "
-        "FROM orders o JOIN users u ON u.user_id=o.user_id "
-        "LEFT JOIN payments p ON p.order_id=o.order_id " + where +
-        " ORDER BY o.created_at DESC, o.order_id DESC";
+    if (limit > 0) sql += " LIMIT " + to_string(limit);
 
-    if (f.limit > 0) sql += " LIMIT " + to_string(f.limit);
+    return dbRows(sql);
+}
 
-    return db.rows(sql);
+// One order (caller must hold dbMutex).
+static Row findOrder(int orderId)
+{
+    Rows rows = dbRows("SELECT o.order_id, o.total, o.status, o.created_at, o.user_id, u.name AS customer, u.email, "
+                       "COALESCE(p.method,'-') AS payment_method, COALESCE(p.status,'-') AS payment_status "
+                       "FROM orders o JOIN users u ON u.user_id=o.user_id "
+                       "LEFT JOIN payments p ON p.order_id=o.order_id WHERE o.order_id=" + to_string(orderId));
+
+    return rows.empty() ? Row() : rows[0];
 }
 
 Row getOrder(int orderId)
 {
-    Rows r = db.rows(
-        "SELECT o.order_id, o.total, o.status, o.created_at, o.user_id, u.name AS customer, u.email, "
-        "COALESCE(p.method,'-') AS payment_method, COALESCE(p.status,'-') AS payment_status "
-        "FROM orders o JOIN users u ON u.user_id=o.user_id "
-        "LEFT JOIN payments p ON p.order_id=o.order_id WHERE o.order_id=" + to_string(orderId));
-
-    return r.empty() ? Row() : r[0];
+    lock_guard<mutex> lock(dbMutex);
+    return findOrder(orderId);
 }
 
 Rows orderItems(int orderId)
 {
-    return db.rows(
-        "SELECT oi.product_id, p.name, oi.quantity, oi.price, (oi.quantity*oi.price) AS subtotal, "
-        "p.category_id, c.category_name "
-        "FROM order_items oi JOIN products p ON oi.product_id=p.product_id "
-        "JOIN categories c ON p.category_id=c.category_id "
-        "WHERE oi.order_id=" + to_string(orderId));
+    lock_guard<mutex> lock(dbMutex);
+
+    return dbRows("SELECT oi.product_id, p.name, oi.quantity, oi.price, (oi.quantity*oi.price) AS subtotal, "
+                  "p.category_id, c.category_name "
+                  "FROM order_items oi JOIN products p ON oi.product_id=p.product_id "
+                  "JOIN categories c ON p.category_id=c.category_id "
+                  "WHERE oi.order_id=" + to_string(orderId));
 }
 
-// ------------------------------------------------------------
-//  Admin: change status
-// ------------------------------------------------------------
-bool isValidOrderStatus(const string& s)
+// ---- changing the status ------------------------------------------------------------------
+
+bool isValidOrderStatus(const string& status)
 {
-    return s == "PLACED" || s == "SHIPPED" || s == "DELIVERED" || s == "CANCELLED";
+    return status == "PLACED" || status == "SHIPPED" || status == "DELIVERED" || status == "CANCELLED";
 }
 
-string updateOrderStatus(int orderId, const string& newStatus)
+// The rules for changing an order's status (caller must hold dbMutex).
+static string changeStatus(int orderId, const string& newStatus)
 {
     if (!isValidOrderStatus(newStatus))
         return "Unknown order status.";
 
-    Transaction tx;
-
-    Row order = getOrder(orderId);
+    Row order = findOrder(orderId);
     if (order.empty())
         return "Order not found.";
 
     string oldStatus = col(order, "status");
+    string id = to_string(orderId);
 
     if (oldStatus == newStatus)
         return "";
 
-    // A cancelled order has already given its stock back; reopening it would
-    // make the stock numbers wrong, so it is final.
     if (oldStatus == "DELIVERED" && newStatus == "CANCELLED")
         return "A delivered order cannot be cancelled.";
 
+    // A cancelled order has already given its stock back; reopening it would make the stock wrong.
     if (oldStatus == "CANCELLED")
         return "A cancelled order cannot be changed.";
 
-    string id = to_string(orderId);
+    dbRun("START TRANSACTION");
 
     if (newStatus == "CANCELLED")
     {
-        // Put the items back on the shelf.
-        Result restock = db.run(
-            "UPDATE products p JOIN order_items oi ON oi.product_id=p.product_id "
-            "SET p.stock=p.stock+oi.quantity WHERE oi.order_id=" + id);
-        if (!restock.ok) return "Database error: " + restock.error;
+        // Put the items back on the shelf ...
+        Result restock = dbRun("UPDATE products p JOIN order_items oi ON oi.product_id=p.product_id "
+                               "SET p.stock=p.stock+oi.quantity WHERE oi.order_id=" + id);
+        if (!restock.ok)
+            return rollbackWith("Database error: " + restock.error);
 
-        // The payment follows the order: cancelled order -> cancelled payment.
-        db.run("UPDATE payments SET status='CANCELLED' WHERE order_id=" + id);
+        // ... and cancel the payment (the payment follows the order).
+        dbRun("UPDATE payments SET status='CANCELLED' WHERE order_id=" + id);
     }
     else if (newStatus == "DELIVERED")
     {
         // Cash on delivery is collected when the parcel is handed over.
-        db.run("UPDATE payments SET status='PAID', paid_at=CURRENT_TIMESTAMP "
-               "WHERE order_id=" + id + " AND method='COD' AND status='PENDING'");
+        dbRun("UPDATE payments SET status='PAID', paid_at=CURRENT_TIMESTAMP "
+              "WHERE order_id=" + id + " AND method='COD' AND status='PENDING'");
     }
 
-    Result r = db.run("UPDATE orders SET status=" + db.quote(newStatus) + " WHERE order_id=" + id);
-    if (!r.ok) return "Database error: " + r.error;
+    Result update = dbRun("UPDATE orders SET status=" + dbQuote(newStatus) + " WHERE order_id=" + id);
+    if (!update.ok)
+        return rollbackWith("Database error: " + update.error);
 
-    tx.commit();
+    dbRun("COMMIT");
     return "";
 }
 
-// A customer may cancel their own order until it has been delivered.
-// The cancel itself is the same rolled-back-to-stock logic the admin uses.
+string updateOrderStatus(int orderId, const string& newStatus)
+{
+    lock_guard<mutex> lock(dbMutex);
+    return changeStatus(orderId, newStatus);
+}
+
 string cancelOrderByCustomer(int userId, int orderId)
 {
-    Row order = getOrder(orderId);
+    lock_guard<mutex> lock(dbMutex);
 
+    Row order = findOrder(orderId);
+
+    // A customer may only cancel their own orders.
     if (order.empty() || atoi(col(order, "user_id").c_str()) != userId)
         return "That order was not found.";
 
-    string status = col(order, "status");
-
-    if (status == "CANCELLED")
-        return "This order is already cancelled.";
-
-    if (status == "DELIVERED")
+    if (col(order, "status") == "DELIVERED")
         return "Too late - this order has already been delivered, so it can no longer be cancelled.";
 
-    // updateOrderStatus checks the status again inside its own transaction.
-    return updateOrderStatus(orderId, "CANCELLED");
+    if (col(order, "status") == "CANCELLED")
+        return "This order is already cancelled.";
+
+    return changeStatus(orderId, "CANCELLED");
 }

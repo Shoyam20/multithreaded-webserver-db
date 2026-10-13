@@ -2,37 +2,26 @@
 #include "../db/database.h"
 #include <string>
 
-// Order status:   PLACED -> SHIPPED -> DELIVERED      (or CANCELLED before delivery)
-// Payment status follows the order: PENDING, then PAID when delivered, or CANCELLED.
+// Order status:   PLACED -> SHIPPED -> DELIVERED      (or CANCELLED, but only before it is delivered)
+// Payment status follows the order: PENDING, then PAID when delivered, or CANCELLED when cancelled.
 
-struct PlaceOrderResult
-{
-    bool        ok = false;
-    std::string error;
-    long long   orderId = 0;
-};
+// Turns the user's cart into an order in ONE database transaction:
+//   check stock -> create order -> copy items -> reduce stock -> create payment -> close cart.
+// If any step fails everything is rolled back. Returns "" on success, otherwise a message.
+std::string placeOrder(int userId);
 
-// Turns the user's active cart into an order, in ONE database transaction:
-// check stock -> create order -> copy items -> reduce stock -> create payment
-// -> close cart. If any step fails, nothing is saved.
-PlaceOrderResult placeOrder(int userId);
+// Orders, newest first. userId 0 = every customer (admin); status "" = any status; limit 0 = no limit.
+// Columns: order_id, total, status, created_at, customer, email, payment_method, payment_status
+Rows listOrders(int userId, const std::string& status, int limit);
 
-struct OrderFilter
-{
-    int         userId = 0;        // 0 = all customers (admin)
-    std::string status;            // "" = any
-    int         limit = 0;
-};
+Row  getOrder(int orderId);          // like listOrders plus user_id; empty Row if not found
+Rows orderItems(int orderId);        // product_id, name, quantity, price, subtotal, category_id, category_name
 
-// order_id, total, status, created_at, customer, email, payment_method, payment_status
-Rows listOrders(const OrderFilter& filter);
-Row  getOrder(int orderId);                       // one row, empty if not found
-Rows orderItems(int orderId);                     // product_id, name, quantity, price, category_id, category_name
+bool isValidOrderStatus(const std::string& status);
 
-// ---- admin ----
-bool        isValidOrderStatus(const std::string& status);
+// Admin: change the status. CANCELLED puts the items back in stock and cancels the payment,
+// DELIVERED marks the cash payment PAID. Returns "" or a message.
 std::string updateOrderStatus(int orderId, const std::string& newStatus);
 
-// Customer-side cancel: allowed until the order is delivered. Restores stock and
-// cancels the payment. Returns "" on success or a message for the customer.
+// Customer: cancel your own order until it is delivered (same rollback as above).
 std::string cancelOrderByCustomer(int userId, int orderId);

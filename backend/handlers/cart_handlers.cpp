@@ -5,47 +5,64 @@
 
 using namespace std;
 
+// The cart page: one row per item and the order summary.
 Response cartPage(Request& req)
 {
+    if (!req.user.loggedIn()) return Response::redirect("/login?notice=needlogin");
+
     Rows items = cartItems(req.user.id);
 
-    Data page;
-    long long units = 0;
-    double total = 0;
+    if (items.empty())
+        return renderPage(req, "Your cart", "pages/cart_empty.html");
 
-    for (const Row& item : items)
+    string lines;
+
+    for (size_t i = 0; i < items.size(); i++)
     {
-        Data line = productData(item);          // name, icon, tint, stock ...
-        line.set("quantity", col(item, "quantity"));
-        line.set("price", money(col(item, "price")));
-        line.set("subtotal", money(col(item, "subtotal")));
-        line.flag("overStock", atoi(col(item, "quantity").c_str()) > atoi(col(item, "stock").c_str()));
-        page.add("lines", line);
+        int quantity = atoi(col(items[i], "quantity").c_str());
+        int stock    = atoi(col(items[i], "stock").c_str());
 
-        units += atoi(col(item, "quantity").c_str());
-        total += atof(col(item, "subtotal").c_str());
+        Vars line;
+        line["id"]       = col(items[i], "product_id");
+        line["name"]     = col(items[i], "name");
+        line["price"]    = formatMoney(col(items[i], "price"));
+        line["subtotal"] = formatMoney(col(items[i], "subtotal"));
+        line["quantity"] = to_string(quantity);
+        line["maxQty"]   = to_string(stock > 0 ? stock : 1);
+        line["icon"]     = categoryIcon(col(items[i], "category_name"));
+        line["tint"]     = categoryTint(atoi(col(items[i], "category_id").c_str()));
+        line["warning"]  = quantity > stock ? "<div class=\"stk no\">Only " + to_string(stock) + " in stock - reduce the quantity</div>" : "";
+
+        lines += renderTemplate("partials/cart_line.html", line);
     }
 
-    page.set("units", units);
-    page.set("total", money(total));
+    Row totals = cartTotals(req.user.id);
 
-    return renderPage(req, "Your cart", "pages/cart.html", page);
+    Vars v;
+    v["lines"] = lines;
+    v["units"] = col(totals, "units");
+    v["total"] = formatMoney(col(totals, "total"));
+    return renderPage(req, "Your cart", "pages/cart.html", v);
 }
 
-// The forms on the product and cart pages POST here.
+// POST /cart/add (the forms on the product pages).
 Response cartAdd(Request& req)
 {
+    if (!req.user.loggedIn()) return Response::redirect("/login?notice=needlogin");
+
     string error = addToCart(req.user.id, req.intParam("product_id"), req.intParam("quantity", 1));
 
     if (!error.empty())
         return messagePage(req, "Could not add to cart", error, "/cart", "Back to cart");
 
-    // "Buy now" skips the cart page.
+    // "Buy now" skips the cart page and goes straight to checkout.
     return Response::redirect(req.param("buy").empty() ? "/cart?notice=added" : "/checkout");
 }
 
 Response cartUpdate(Request& req)
 {
+    if (!req.user.loggedIn()) return Response::redirect("/login?notice=needlogin");
+
     string error = setCartQuantity(req.user.id, req.intParam("product_id"), req.intParam("quantity", 1));
 
     if (!error.empty())
@@ -56,6 +73,8 @@ Response cartUpdate(Request& req)
 
 Response cartRemove(Request& req)
 {
+    if (!req.user.loggedIn()) return Response::redirect("/login?notice=needlogin");
+
     string error = removeFromCart(req.user.id, req.intParam("product_id"));
 
     if (!error.empty())

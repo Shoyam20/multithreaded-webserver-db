@@ -1,5 +1,5 @@
 <div class="panel narrowpanel">
-  {{#if error}}<div class="err">{{error}}</div>{{/if}}
+  {{{error}}}
 
   <form method="POST" action="/admin/products/save">
     <input type="hidden" name="id" value="{{productId}}">
@@ -20,7 +20,7 @@
     <div class="field"><label>Category</label>
       <select name="category_id" required>
         <option value="">Choose…</option>
-        {{#each categoryOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}
+        {{{categoryOptions}}}
       </select></div>
 
     <button class="btn accent" type="submit">Save product</button>

@@ -5,68 +5,30 @@
 #include <vector>
 #include <mysql.h>
 
-// A database row: column name -> value (NULL becomes "").
-using Row  = std::map<std::string, std::string>;
-using Rows = std::vector<Row>;
+// One database row: column name -> value (a NULL becomes "").
+typedef std::map<std::string, std::string> Row;
+typedef std::vector<Row> Rows;
 
-// Value of a column, or "" if the row does not have it.
-inline std::string col(const Row& row, const std::string& name)
-{
-    auto it = row.find(name);
-    return it == row.end() ? "" : it->second;
-}
+// Value of a column, or "" if the row has no such column.
+std::string col(const Row& row, const std::string& name);
 
 // What running one SQL statement gives back.
 struct Result
 {
     bool        ok = false;
-    std::string error;                    // MySQL's message when ok is false
-    std::vector<std::string> columns;     // SELECT: column names in order
-    Rows        rows;                     // SELECT: the data
-    long long   insertId = 0;             // INSERT: the new AUTO_INCREMENT id
-    long long   affectedRows = 0;         // UPDATE/DELETE: rows changed
+    std::string error;           // MySQL's message when ok is false
+    Rows        rows;            // SELECT: the data
+    long long   insertId = 0;    // INSERT: the new AUTO_INCREMENT id
+    long long   affectedRows = 0;// UPDATE / DELETE: how many rows changed
 };
 
-// One shared MySQL connection; the mutex makes it safe for all worker threads.
-class Database
-{
-public:
-    bool connect();
-    void disconnect();
+// There is ONE MySQL connection shared by all worker threads, so only one thread may use it at a time.
+// Every service function starts with:   lock_guard<mutex> lock(dbMutex);
+// and keeps the lock until it returns. (The functions below do not lock by themselves.)
+extern std::mutex dbMutex;
 
-    Result run(const std::string& sql);          // any statement
-    Rows   rows(const std::string& sql);         // SELECT, ignoring errors
-    std::string quote(const std::string& text);  // 'escaped text' (prevents SQL injection)
-
-    std::recursive_mutex& mutex() { return mutex_; }
-
-private:
-    MYSQL* conn_ = nullptr;
-    std::recursive_mutex mutex_;
-};
-
-extern Database db;
-
-// Hold the database exclusively while a block of related queries runs.
-class DbLock
-{
-public:
-    DbLock() : guard_(db.mutex()) {}
-private:
-    std::lock_guard<std::recursive_mutex> guard_;
-};
-
-// START TRANSACTION ... COMMIT. If commit() is never called (an early return
-// or an error), everything is rolled back automatically.
-class Transaction
-{
-public:
-    Transaction();
-    ~Transaction();
-    void commit();
-
-private:
-    DbLock lock_;
-    bool   done_ = false;
-};
-
+bool        dbConnect();                         // password comes from the ECOM_DB_PASS environment variable
+void        dbClose();
+Result      dbRun(const std::string& sql);       // run any statement
+Rows        dbRows(const std::string& sql);      // run a SELECT and return just the rows
+std::string dbQuote(const std::string& text);    // 'escaped text' - always use this for text typed by users (SQL injection)

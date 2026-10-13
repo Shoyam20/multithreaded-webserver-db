@@ -1,0 +1,8 @@
+<form method="POST" action="/admin/order/status" class="stack">
+  <input type="hidden" name="id" value="{{id}}">
+  <label>Change order status</label>
+  <select name="status">{{{options}}}</select>
+  <button class="btn" type="submit">Update status</button>
+  <small class="muted">Cancelling returns the items to stock and cannot be undone.
+    Marking DELIVERED marks the cash-on-delivery payment as PAID.</small>
+</form>

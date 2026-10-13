@@ -4,15 +4,7 @@
 <div class="tablewrap">
 <table>
   <tr><th>Session ID</th><th>Login time</th><th>Last activity</th><th>Logout time</th><th>Status</th></tr>
-  {{#each sessions}}
-    <tr class="{{#if current}}current{{/if}}">
-      <td><code>{{sessionId}}</code>{{#if current}} <b>(this browser)</b>{{/if}}</td>
-      <td>{{loginTime}}</td>
-      <td>{{lastActivity}}</td>
-      <td>{{#if logoutTime}}{{logoutTime}}{{else}}<span class="out">—</span>{{/if}}</td>
-      <td>{{#if active}}<span class="active">Active</span>{{else}}<span class="out">Logged out</span>{{/if}}</td>
-    </tr>
-  {{/each}}
+  {{{rows}}}
 </table>
 </div>
 <p><a class="btn" href="/logout">Sign out this session</a></p>

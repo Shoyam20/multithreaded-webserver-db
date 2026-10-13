@@ -1,6 +1,5 @@
 #include "app.h"
-#include "config.h"
-#include "routes.h"
+#include "handlers/handlers.h"
 #include "handlers/view.h"
 #include "services/cart_service.h"
 #include "services/user_service.h"
@@ -9,65 +8,42 @@
 
 using namespace std;
 
-static const Router router = buildRoutes();
-
-// ------------------------------------------------------------
-//  Static files: /static/css/style.css -> frontend/static/css/style.css
-// ------------------------------------------------------------
+// The Content-Type for a static file, chosen from its ending.
 static string contentTypeFor(const string& path)
 {
-    auto endsWith = [&](const string& ext)
-    {
-        return path.size() >= ext.size() && path.compare(path.size() - ext.size(), ext.size(), ext) == 0;
-    };
-
-    if (endsWith(".css"))  return "text/css; charset=utf-8";
-    if (endsWith(".js"))   return "application/javascript; charset=utf-8";
-    if (endsWith(".svg"))  return "image/svg+xml";
-    if (endsWith(".png"))  return "image/png";
-    if (endsWith(".jpg") || endsWith(".jpeg")) return "image/jpeg";
-    if (endsWith(".ico"))  return "image/x-icon";
-    if (endsWith(".woff2")) return "font/woff2";
+    if (path.size() >= 4 && path.compare(path.size() - 4, 4, ".css") == 0) return "text/css; charset=utf-8";
+    if (path.size() >= 3 && path.compare(path.size() - 3, 3, ".js") == 0)  return "application/javascript; charset=utf-8";
+    if (path.size() >= 4 && path.compare(path.size() - 4, 4, ".png") == 0) return "image/png";
+    if (path.size() >= 4 && path.compare(path.size() - 4, 4, ".svg") == 0) return "image/svg+xml";
     return "application/octet-stream";
 }
 
-static bool serveStatic(const Request& req, Response& res)
+// Static files: /static/css/style.css is the file frontend/static/css/style.css.
+static Response staticFile(const string& path)
 {
-    if (req.path.compare(0, 8, "/static/") != 0)
-        return false;
+    // Never let "../" climb out of the static folder.
+    if (path.find("..") != string::npos || path.find('\\') != string::npos)
+        return Response::html("Forbidden", 403);
 
-    // Never allow "../" to escape the static folder.
-    if (req.path.find("..") != string::npos || req.path.find('\\') != string::npos)
-    {
-        res = Response::html("Forbidden", 403);
-        return true;
-    }
-
-    ifstream in(config::frontendDir + req.path, ios::binary);
-
+    ifstream in(("frontend" + path).c_str(), ios::binary);
     if (!in)
-    {
-        res = Response::html("Not found", 404);
-        return true;
-    }
+        return Response::html("Not found", 404);
 
     stringstream data;
     data << in.rdbuf();
 
+    Response res;
     res.body = data.str();
-    res.contentType = contentTypeFor(req.path);
-    res.headers.push_back("Cache-Control: no-cache");
-    return true;
+    res.contentType = contentTypeFor(path);
+    return res;
 }
 
-// ------------------------------------------------------------
-//  Who is making this request?
-// ------------------------------------------------------------
+// Who is making this request? The browser sends its session id in a cookie; the database knows which user it belongs to.
 static void identifyUser(Request& req)
 {
-    auto cookie = req.cookies.find("session_id");
+    map<string, string>::iterator cookie = req.cookies.find("session_id");
     if (cookie == req.cookies.end())
-        return;
+        return;                                   // no cookie: a guest (req.user.id stays 0)
 
     req.sessionId = cookie->second;
 
@@ -75,17 +51,58 @@ static void identifyUser(Request& req)
         req.cartCount = cartItemCount(req.user.id);
 }
 
+// Decides which handler answers the request. Read it top to bottom: one line per URL.
 Response handleRequest(Request& req)
 {
-    Response res;
-
-    if (serveStatic(req, res))
-        return res;
+    if (req.path.compare(0, 8, "/static/") == 0)
+        return staticFile(req.path);
 
     identifyUser(req);
 
-    if (!router.dispatch(req, res))
-        return notFoundPage(req);
+    const string& path = req.path;
+    string method = (req.method == "HEAD") ? "GET" : req.method;
 
-    return res;
+    // ---- anyone ----
+    if (path == "/"         && method == "GET")  return homePage(req);
+    if (path == "/products" && method == "GET")  return productsPage(req);
+    if (path == "/product"  && method == "GET")  return productDetailPage(req);    // /product?id=3
+
+    if (path == "/login"    && method == "GET")  return loginPage(req);
+    if (path == "/login"    && method == "POST") return loginSubmit(req);
+    if (path == "/signup"   && method == "GET")  return signupPage(req);
+    if (path == "/signup"   && method == "POST") return signupSubmit(req);
+    if (path == "/logout"   && method == "GET")  return logout(req);
+
+    // ---- signed-in customers (each handler checks the login itself) ----
+    if (path == "/cart"           && method == "GET")  return cartPage(req);
+    if (path == "/cart/add"       && method == "POST") return cartAdd(req);
+    if (path == "/cart/update"    && method == "POST") return cartUpdate(req);
+    if (path == "/cart/remove"    && method == "POST") return cartRemove(req);
+
+    if (path == "/checkout"       && method == "GET")  return checkoutPage(req);
+    if (path == "/checkout/place" && method == "POST") return placeOrderSubmit(req);
+    if (path == "/orders"         && method == "GET")  return myOrdersPage(req);
+    if (path == "/orders/cancel"  && method == "POST") return cancelMyOrder(req);
+    if (path == "/sessions"       && method == "GET")  return mySessionsPage(req);
+
+    // ---- admin only (each handler checks the role itself) ----
+    if (path == "/admin"                 && method == "GET")  return adminDashboard(req);
+
+    if (path == "/admin/products"        && method == "GET")  return adminProducts(req);
+    if (path == "/admin/products/edit"   && method == "GET")  return adminProductForm(req);   // ?id=3, or no id = new
+    if (path == "/admin/products/save"   && method == "POST") return adminProductSave(req);
+    if (path == "/admin/products/stock"  && method == "POST") return adminProductStock(req);
+    if (path == "/admin/products/delete" && method == "POST") return adminProductDelete(req);
+
+    if (path == "/admin/categories"        && method == "GET")  return adminCategories(req);
+    if (path == "/admin/categories/save"   && method == "POST") return adminCategorySave(req);
+    if (path == "/admin/categories/delete" && method == "POST") return adminCategoryDelete(req);
+
+    if (path == "/admin/orders"        && method == "GET")  return adminOrders(req);
+    if (path == "/admin/order"         && method == "GET")  return adminOrderDetail(req);   // ?id=7
+    if (path == "/admin/order/status"  && method == "POST") return adminOrderStatus(req);
+
+    if (path == "/admin/users"         && method == "GET")  return adminUsers(req);
+
+    return notFoundPage(req);
 }
