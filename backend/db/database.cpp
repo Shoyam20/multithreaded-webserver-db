@@ -24,6 +24,7 @@ bool Database::connect()
                             config::dbPort, nullptr, 0))
     {
         cout << "[DB] Connection failed: " << mysql_error(conn_) << endl;
+        cout << "[DB] Is MySQL running, and is the ECOM_DB_PASS environment variable set to your MySQL password?" << endl;
         return false;
     }
 
