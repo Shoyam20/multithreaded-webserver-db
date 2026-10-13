@@ -1,6 +1,5 @@
 #include "handlers.h"
-#include "view.h"
-#include "../services/user_service.h"
+#include "../services/services.h"
 
 using namespace std;
 

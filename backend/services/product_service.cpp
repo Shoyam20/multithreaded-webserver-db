@@ -1,10 +1,10 @@
-#include "product_service.h"
+#include "services.h"
 #include "../config.h"
 #include <cstdio>
 
 using namespace std;
 
-// The columns every product query selects (see product_service.h).
+// The columns every product query selects (see services.h).
 static const string PRODUCT_SELECT =
     "SELECT p.product_id, p.name, p.description, p.price, p.stock, p.category_id, c.category_name "
     "FROM products p JOIN categories c ON p.category_id=c.category_id ";

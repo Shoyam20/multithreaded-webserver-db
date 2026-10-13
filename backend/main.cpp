@@ -1,7 +1,7 @@
 #include "config.h"
 #include "core/server.h"
 #include "db/database.h"
-#include "services/user_service.h"
+#include "services/services.h"
 #include <iostream>
 #include <string>
 

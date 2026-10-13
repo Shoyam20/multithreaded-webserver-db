@@ -1,8 +1,6 @@
 #include "app.h"
 #include "handlers/handlers.h"
-#include "handlers/view.h"
-#include "services/cart_service.h"
-#include "services/user_service.h"
+#include "services/services.h"
 #include <fstream>
 #include <sstream>
 

@@ -1,9 +1,28 @@
 #include "handlers.h"
-#include "view.h"
-#include "../services/order_service.h"
+#include "../services/services.h"
+#include "../config.h"
 #include <cstdlib>
 
 using namespace std;
+
+// Admin home page: a few simple counts.
+Response adminDashboard(Request& req)
+{
+    if (!req.user.isAdmin()) return Response::redirect(req.user.loggedIn() ? "/?notice=forbidden" : "/login?notice=needlogin");
+
+    Row stats = dashboardStats();
+
+    Vars v;
+    v["users"]         = col(stats, "users");
+    v["products"]      = col(stats, "products");
+    v["orders"]        = col(stats, "orders");
+    v["revenue"]       = formatMoney(col(stats, "revenue"));
+    v["pendingOrders"] = col(stats, "pending_orders");
+    v["lowStockCount"] = col(stats, "low_stock");
+    v["lowStockLevel"] = to_string(LOW_STOCK_LEVEL);
+
+    return renderAdminPage(req, "Dashboard", "admin/dashboard.html", "dashboard", v);
+}
 
 static const char* ORDER_STATUSES[] = { "PLACED", "SHIPPED", "DELIVERED", "CANCELLED" };
 
@@ -120,4 +139,30 @@ Response adminOrderStatus(Request& req)
         return adminMessagePage(req, "Could not update order", error, "/admin/order?id=" + to_string(id), "Back to order");
 
     return Response::redirect("/admin/order?id=" + to_string(id) + "&notice=status");
+}
+
+// Admin: the list of all users (read-only).
+Response adminUsers(Request& req)
+{
+    if (!req.user.isAdmin()) return Response::redirect(req.user.loggedIn() ? "/?notice=forbidden" : "/login?notice=needlogin");
+
+    string rows;
+    Rows users = listUsers();
+
+    for (size_t i = 0; i < users.size(); i++)
+    {
+        Vars row;
+        row["id"]        = col(users[i], "user_id");
+        row["name"]      = col(users[i], "name");
+        row["email"]     = col(users[i], "email");
+        row["role"]      = col(users[i], "role");
+        row["roleClass"] = col(users[i], "role") == "ADMIN" ? "green" : "";
+        row["joined"]    = col(users[i], "created_at");
+        row["orders"]    = col(users[i], "orders");
+        rows += renderTemplate("partials/admin_user_row.html", row);
+    }
+
+    Vars v;
+    v["rows"] = rows;
+    return renderAdminPage(req, "Users", "admin/users.html", "users", v);
 }

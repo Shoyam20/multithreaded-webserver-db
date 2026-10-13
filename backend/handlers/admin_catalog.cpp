@@ -1,7 +1,6 @@
 #include "handlers.h"
-#include "view.h"
+#include "../services/services.h"
 #include "../config.h"
-#include "../services/product_service.h"
 #include <cstdlib>
 
 using namespace std;
