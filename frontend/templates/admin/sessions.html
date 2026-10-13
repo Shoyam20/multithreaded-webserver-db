@@ -1,0 +1,24 @@
+<p class="muted">Latest 100 login sessions, active ones first. Ending a session signs that browser out.</p>
+<div class="tablewrap">
+<table>
+  <tr><th>User</th><th>Session ID</th><th>Login</th><th>Last activity</th><th>Logout</th><th>Status</th><th></th></tr>
+  {{#each sessions}}
+    <tr class="{{#if current}}current{{/if}}">
+      <td>{{name}}<br><small class="muted">{{email}}</small></td>
+      <td><code>{{sessionId}}</code>{{#if current}} <b>(you)</b>{{/if}}</td>
+      <td>{{loginTime}}</td>
+      <td>{{lastActivity}}</td>
+      <td>{{#if logoutTime}}{{logoutTime}}{{else}}<span class="out">—</span>{{/if}}</td>
+      <td>{{#if active}}<span class="pill green">Active</span>{{else}}<span class="pill">Ended</span>{{/if}}</td>
+      <td>
+        {{#if active}}
+          <form method="POST" action="/admin/sessions/end" class="inline">
+            <input type="hidden" name="session_id" value="{{sessionId}}">
+            <button class="btn sm danger" type="submit">End session</button>
+          </form>
+        {{/if}}
+      </td>
+    </tr>
+  {{/each}}
+</table>
+</div>

@@ -10,13 +10,13 @@
   {{> partials/header.html}}
 
   <main class="wrap">
-    {{{notice}}}
+    {{#if noticeText}}<div class="flash {{noticeClass}}">{{noticeText}}</div>{{/if}}
     {{{content}}}
   </main>
 
   {{> partials/footer.html}}
 
-  {{{guestModals}}}
+  {{#if loggedIn}}{{else}}{{> partials/guest_modals.html}}{{/if}}
   <script src="/static/js/app.js"></script>
 </body>
 </html>

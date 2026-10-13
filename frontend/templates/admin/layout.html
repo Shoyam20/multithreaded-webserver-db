@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{{title}} — Server Sync Admin</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/admin.css">
 </head>
 <body class="adminbody">
   <aside class="sidebar">
@@ -15,6 +16,9 @@
       <a class="{{nav_products}}" href="/admin/products">🛍️ Products &amp; stock</a>
       <a class="{{nav_categories}}" href="/admin/categories">🗂️ Categories</a>
       <a class="{{nav_users}}" href="/admin/users">👥 Users</a>
+      <a class="{{nav_sessions}}" href="/admin/sessions">🔐 Sessions</a>
+      <a class="{{nav_tables}}" href="/admin/tables">🗄️ Database tables</a>
+      <a class="{{nav_logs}}" href="/admin/logs">🖥️ Server logs</a>
     </nav>
     <div class="sidefoot">
       <div class="who">Signed in as<br><b>{{userName}}</b></div>
@@ -24,7 +28,7 @@
   </aside>
 
   <main class="adminmain">
-    {{{notice}}}
+    {{#if noticeText}}<div class="flash {{noticeClass}}">{{noticeText}}</div>{{/if}}
     <h1 class="page-title">{{title}}</h1>
     {{{content}}}
   </main>

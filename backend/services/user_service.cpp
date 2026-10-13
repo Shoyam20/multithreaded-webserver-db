@@ -1,13 +1,13 @@
-#define _CRT_RAND_S          // lets us use rand_s(), the operating system's random number source
-#include "services.h"
+#define _CRT_RAND_S          // lets us use rand_s(), the OS random number source
+#include "user_service.h"
 #include <cstdlib>
 
 using namespace std;
 
-// Random text made of hex digits (0-9, a-f), e.g. for salts and session ids.
+// Random hex text from the operating system's random generator.
 static string randomHex(int length)
 {
-    const char* digits = "0123456789abcdef";
+    static const char digits[] = "0123456789abcdef";
     string out;
 
     for (int i = 0; i < length; i++)
@@ -20,41 +20,40 @@ static string randomHex(int length)
     return out;
 }
 
-// ---- passwords -------------------------------------------------------------------------
-// A password is never stored as typed. We store   sha256$<salt>$<hash>
-// where hash = SHA-256(salt + password), calculated by MySQL's SHA2().
-// The random salt makes two users with the same password get different hashes.
-
-// SHA-256 of (salt + password) as 64 hex characters. (Caller holds dbMutex.)
+// ------------------------------------------------------------
+//  Passwords
+//  Stored as  sha256$<salt>$<hash>  (the hash is computed by MySQL's SHA2).
+//  Accounts created before this change still hold plain text; they are
+//  upgraded to the hashed format the next time they log in.
+// ------------------------------------------------------------
 static string saltedHash(const string& salt, const string& password)
 {
-    Rows r = dbRows("SELECT SHA2(CONCAT(" + dbQuote(salt) + "," + dbQuote(password) + "),256) AS h");
+    Rows r = db.rows("SELECT SHA2(CONCAT(" + db.quote(salt) + "," + db.quote(password) +
+                     "),256) AS h");
     return r.empty() ? "" : col(r[0], "h");
 }
 
-// The text to store in users.password for a new account.
 static string makePasswordRecord(const string& password)
 {
     string salt = randomHex(16);
     return "sha256$" + salt + "$" + saltedHash(salt, password);
 }
 
-// Does the typed password match the stored text? Splits "sha256$salt$hash" and hashes again.
 static bool passwordMatches(const string& stored, const string& password)
 {
-    size_t secondDollar = stored.find('$', 7);
+    if (stored.compare(0, 7, "sha256$") != 0)
+        return stored == password;                          // old plain-text account
 
-    if (stored.compare(0, 7, "sha256$") != 0 || secondDollar == string::npos)
-        return false;
+    size_t second = stored.find('$', 7);
+    if (second == string::npos) return false;
 
-    string salt = stored.substr(7, secondDollar - 7);
-    string hash = stored.substr(secondDollar + 1);
-
-    return hash == saltedHash(salt, password);
+    string salt = stored.substr(7, second - 7);
+    return stored.substr(second + 1) == saltedHash(salt, password);
 }
 
-// ---- accounts -------------------------------------------------------------------------
-
+// ------------------------------------------------------------
+//  Accounts
+// ------------------------------------------------------------
 string signUp(const string& name, const string& email, const string& password)
 {
     if (name.empty() || email.empty() || password.empty())
@@ -63,14 +62,15 @@ string signUp(const string& name, const string& email, const string& password)
     if (email.find('@') == string::npos || email.size() > 100 || name.size() > 100)
         return "Please enter a valid name and email.";
 
-    lock_guard<mutex> lock(dbMutex);
+    DbLock lock;
 
-    Rows existing = dbRows("SELECT user_id FROM users WHERE email=" + dbQuote(email));
+    Rows existing = db.rows("SELECT user_id FROM users WHERE email=" + db.quote(email));
     if (!existing.empty())
         return "That email is already registered. Try signing in.";
 
-    Result r = dbRun("INSERT INTO users (name, email, password) VALUES (" +
-                     dbQuote(name) + "," + dbQuote(email) + "," + dbQuote(makePasswordRecord(password)) + ")");
+    Result r = db.run("INSERT INTO users (name, email, password) VALUES (" +
+                      db.quote(name) + "," + db.quote(email) + "," +
+                      db.quote(makePasswordRecord(password)) + ")");
 
     return r.ok ? "" : "Could not create the account: " + r.error;
 }
@@ -80,47 +80,58 @@ string logIn(const string& email, const string& password, User& user)
     if (email.empty() || password.empty())
         return "Both fields are required.";
 
-    lock_guard<mutex> lock(dbMutex);
+    DbLock lock;
 
-    Rows found = dbRows("SELECT user_id, name, email, password, role FROM users WHERE email=" + dbQuote(email));
+    Rows found = db.rows("SELECT user_id, name, email, password, COALESCE(role,'CUSTOMER') AS role "
+                         "FROM users WHERE email=" + db.quote(email));
+
     if (found.empty())
         return "No account found with that email.";
 
-    if (!passwordMatches(col(found[0], "password"), password))
+    const Row& row = found[0];
+
+    if (!passwordMatches(col(row, "password"), password))
         return "Incorrect password.";
 
-    user.id    = atoi(col(found[0], "user_id").c_str());
-    user.name  = col(found[0], "name");
-    user.email = col(found[0], "email");
-    user.role  = col(found[0], "role");
+    user.id    = atoi(col(row, "user_id").c_str());
+    user.name  = col(row, "name");
+    user.email = col(row, "email");
+    user.role  = col(row, "role");
+
+    // Upgrade an old plain-text password to the hashed format.
+    if (col(row, "password").compare(0, 7, "sha256$") != 0)
+        db.run("UPDATE users SET password=" + db.quote(makePasswordRecord(password)) +
+               " WHERE user_id=" + to_string(user.id));
+
     return "";
 }
 
-// ---- sessions -------------------------------------------------------------------------
-
-// Creates a login session: a random 32-character id stored in the database (and in the browser's cookie).
+// ------------------------------------------------------------
+//  Sessions
+// ------------------------------------------------------------
 string startSession(int userId)
 {
-    lock_guard<mutex> lock(dbMutex);
+    for (int attempt = 0; attempt < 5; attempt++)
+    {
+        string id = randomHex(32);
 
-    string sessionId = randomHex(32);
+        Result r = db.run("INSERT INTO user_sessions (session_id, user_id) VALUES (" +
+                          db.quote(id) + "," + to_string(userId) + ")");
+        if (r.ok) return id;
+    }
 
-    Result r = dbRun("INSERT INTO user_sessions (session_id, user_id) VALUES (" +
-                     dbQuote(sessionId) + "," + to_string(userId) + ")");
-
-    return r.ok ? sessionId : "";
+    return "";
 }
 
-// Finds out who a session id belongs to (and notes that the session was just used).
 bool userForSession(const string& sessionId, User& user)
 {
     if (sessionId.empty()) return false;
 
-    lock_guard<mutex> lock(dbMutex);
+    Rows found = db.rows(
+        "SELECT u.user_id, u.name, u.email, COALESCE(u.role,'CUSTOMER') AS role "
+        "FROM user_sessions s JOIN users u ON s.user_id=u.user_id "
+        "WHERE s.session_id=" + db.quote(sessionId) + " AND s.is_active=TRUE");
 
-    Rows found = dbRows("SELECT u.user_id, u.name, u.email, u.role "
-                        "FROM user_sessions s JOIN users u ON s.user_id=u.user_id "
-                        "WHERE s.session_id=" + dbQuote(sessionId) + " AND s.is_active=TRUE");
     if (found.empty()) return false;
 
     user.id    = atoi(col(found[0], "user_id").c_str());
@@ -128,53 +139,66 @@ bool userForSession(const string& sessionId, User& user)
     user.email = col(found[0], "email");
     user.role  = col(found[0], "role");
 
-    dbRun("UPDATE user_sessions SET last_activity=CURRENT_TIMESTAMP WHERE session_id=" + dbQuote(sessionId));
+    db.run("UPDATE user_sessions SET last_activity=CURRENT_TIMESTAMP WHERE session_id=" +
+           db.quote(sessionId));
+
     return true;
 }
 
-// Logout: the session stays in the table but is marked inactive, so the cookie stops working.
 void endSession(const string& sessionId)
 {
     if (sessionId.empty()) return;
 
-    lock_guard<mutex> lock(dbMutex);
-
-    dbRun("UPDATE user_sessions SET is_active=FALSE, logout_time=CURRENT_TIMESTAMP "
-          "WHERE session_id=" + dbQuote(sessionId) + " AND is_active=TRUE");
+    db.run("UPDATE user_sessions SET is_active=FALSE, logout_time=CURRENT_TIMESTAMP "
+           "WHERE session_id=" + db.quote(sessionId) + " AND is_active=TRUE");
 }
 
 Rows sessionsForUser(int userId)
 {
-    lock_guard<mutex> lock(dbMutex);
-
-    return dbRows("SELECT session_id, login_time, last_activity, logout_time, is_active "
-                  "FROM user_sessions WHERE user_id=" + to_string(userId) +
-                  " ORDER BY login_time DESC LIMIT 20");
+    return db.rows("SELECT session_id, login_time, last_activity, logout_time, is_active "
+                   "FROM user_sessions WHERE user_id=" + to_string(userId) +
+                   " ORDER BY login_time DESC LIMIT 20");
 }
 
-// ---- admin ----------------------------------------------------------------------------
+Rows allSessions(int limit)
+{
+    return db.rows("SELECT s.session_id, u.name, u.email, s.login_time, s.last_activity, "
+                   "s.logout_time, s.is_active "
+                   "FROM user_sessions s JOIN users u ON s.user_id=u.user_id "
+                   "ORDER BY s.is_active DESC, s.last_activity DESC LIMIT " + to_string(limit));
+}
 
+// ------------------------------------------------------------
+//  Admin
+// ------------------------------------------------------------
 Rows listUsers()
 {
-    lock_guard<mutex> lock(dbMutex);
+    return db.rows(
+        "SELECT u.user_id, u.name, u.email, COALESCE(u.role,'CUSTOMER') AS role, u.created_at, "
+        "(SELECT COUNT(*) FROM orders o WHERE o.user_id=u.user_id) AS orders, "
+        "(SELECT COUNT(*) FROM user_sessions s WHERE s.user_id=u.user_id AND s.is_active=TRUE) AS active_sessions "
+        "FROM users u ORDER BY u.user_id");
+}
 
-    return dbRows("SELECT u.user_id, u.name, u.email, u.role, u.created_at, "
-                  "(SELECT COUNT(*) FROM orders o WHERE o.user_id=u.user_id) AS orders "
-                  "FROM users u ORDER BY u.user_id");
+string setUserRole(int userId, const string& role)
+{
+    if (role != "CUSTOMER" && role != "ADMIN")
+        return "Unknown role.";
+
+    Result r = db.run("UPDATE users SET role=" + db.quote(role) +
+                      " WHERE user_id=" + to_string(userId));
+
+    return r.ok ? "" : "Database error: " + r.error;
 }
 
 bool makeAdminByEmail(const string& email)
 {
-    lock_guard<mutex> lock(dbMutex);
-
-    Result r = dbRun("UPDATE users SET role='ADMIN' WHERE email=" + dbQuote(email));
+    Result r = db.run("UPDATE users SET role='ADMIN' WHERE email=" + db.quote(email));
     return r.ok && r.affectedRows > 0;
 }
 
 int countAdmins()
 {
-    lock_guard<mutex> lock(dbMutex);
-
-    Rows r = dbRows("SELECT COUNT(*) AS n FROM users WHERE role='ADMIN'");
+    Rows r = db.rows("SELECT COUNT(*) AS n FROM users WHERE role='ADMIN'");
     return r.empty() ? 0 : atoi(col(r[0], "n").c_str());
 }

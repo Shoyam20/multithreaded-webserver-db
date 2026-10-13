@@ -1,7 +1,7 @@
 <div class="authwrap"><div class="authcard">
   <h1>Sign in</h1>
   <p class="sub">Welcome back.</p>
-  {{{error}}}
+  {{#if error}}<div class="err">{{error}}</div>{{/if}}
   <form method="POST" action="/login">
     <div class="field"><label>Email</label><input name="email" type="email" placeholder="you@example.com" value="{{email}}" required></div>
     <div class="field"><label>Password</label><input name="password" type="password" placeholder="Your password" required></div>

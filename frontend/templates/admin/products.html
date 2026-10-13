@@ -3,7 +3,7 @@
     <input name="q" placeholder="Search name or description" value="{{search}}">
     <select name="category">
       <option value="">All categories</option>
-      {{{categoryOptions}}}
+      {{#each categoryOptions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>{{/each}}
     </select>
     <button class="btn ghost" type="submit">Filter</button>
   </form>
@@ -12,11 +12,34 @@
   <a class="btn accent" href="/admin/products/edit">+ Add product</a>
 </div>
 
-<p class="muted">{{count}} product(s){{{lowNote}}}</p>
+<p class="muted">{{count}} product(s){{#if lowOnly}} — showing low stock only (<a href="/admin/products">show all</a>){{/if}}</p>
 
 <div class="tablewrap">
 <table>
   <tr><th>ID</th><th>Product</th><th>Category</th><th>Price</th><th>Stock (edit &amp; press Set)</th><th>Actions</th></tr>
-  {{{rows}}}
+  {{#each products}}
+    <tr>
+      <td>{{id}}</td>
+      <td><span class="ico">{{icon}}</span> <a href="/admin/products/edit?id={{id}}">{{name}}</a></td>
+      <td>{{categoryName}}</td>
+      <td>{{price}}</td>
+      <td>
+        <form method="POST" action="/admin/products/stock" class="inline">
+          <input type="hidden" name="id" value="{{id}}">
+          <input type="hidden" name="back" value="{{backUrl}}">
+          <input class="narrow {{#if lowForAdmin}}lowinput{{/if}}" type="number" name="stock" min="0" value="{{stock}}">
+          <button class="btn sm" type="submit">Set</button>
+        </form>
+      </td>
+      <td class="actions">
+        <a class="btn sm ghost" href="/admin/products/edit?id={{id}}">Edit</a>
+        <form method="POST" action="/admin/products/delete" class="inline"
+              onsubmit="return confirm('Delete {{name}}? This cannot be undone.')">
+          <input type="hidden" name="id" value="{{id}}">
+          <button class="btn sm danger" type="submit">Delete</button>
+        </form>
+      </td>
+    </tr>
+  {{/each}}
 </table>
 </div>

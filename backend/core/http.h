@@ -22,6 +22,7 @@ struct Request
 {
     std::string method;                     // "GET", "POST"
     std::string path;                       // "/products"
+    std::string target;                     // path + query string exactly as sent: "/products?category=3"
     StrMap      query;                      // ?a=1&b=2
     StrMap      form;                       // POST body fields
     StrMap      cookies;

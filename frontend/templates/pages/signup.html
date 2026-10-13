@@ -1,7 +1,7 @@
 <div class="authwrap"><div class="authcard">
   <h1>Create account</h1>
   <p class="sub">Join Server Sync in a few seconds.</p>
-  {{{error}}}
+  {{#if error}}<div class="err">{{error}}</div>{{/if}}
   <form method="POST" action="/signup">
     <div class="field"><label>Full name</label><input name="name" placeholder="Your name" value="{{name}}" required></div>
     <div class="field"><label>Email</label><input name="email" type="email" placeholder="you@example.com" value="{{email}}" required></div>

@@ -1,94 +1,82 @@
-#include "services.h"
-#include "../config.h"
+#include "product_service.h"
+#include "category_service.h"
 #include <cstdio>
 
 using namespace std;
 
-// The columns every product query selects (see services.h).
-static const string PRODUCT_SELECT =
-    "SELECT p.product_id, p.name, p.description, p.price, p.stock, p.category_id, c.category_name "
+static const char* SELECT_PRODUCTS =
+    "SELECT p.product_id, p.name, p.description, p.price, p.stock, "
+    "p.category_id, c.category_name "
     "FROM products p JOIN categories c ON p.category_id=c.category_id ";
 
-// Makes the text a user typed safe for a LIKE search: %, _ and \ must match themselves.
+// Make a user's search text safe for LIKE: %, _ and \ must match literally.
 static string likePattern(const string& text)
 {
     string escaped;
 
-    for (size_t i = 0; i < text.size(); i++)
+    for (char c : text)
     {
-        if (text[i] == '%' || text[i] == '_' || text[i] == '\\') escaped += '\\';
-        escaped += text[i];
+        if (c == '%' || c == '_' || c == '\\') escaped += '\\';
+        escaped += c;
     }
 
-    return dbQuote("%" + escaped + "%");
+    return db.quote("%" + escaped + "%");
 }
 
-// ---- reading (storefront) -----------------------------------------------------------
-
-Rows listCategories()
+// ------------------------------------------------------------
+//  Reading
+// ------------------------------------------------------------
+Rows findProducts(const ProductFilter& f)
 {
-    lock_guard<mutex> lock(dbMutex);
-    return dbRows("SELECT category_id, category_name FROM categories ORDER BY category_id");
-}
-
-Row getProduct(int productId)
-{
-    lock_guard<mutex> lock(dbMutex);
-
-    Rows rows = dbRows(PRODUCT_SELECT + "WHERE p.product_id=" + to_string(productId));
-    return rows.empty() ? Row() : rows[0];
-}
-
-// Builds a WHERE clause from the filters that are set, then adds ORDER BY.
-Rows findProducts(int categoryId, const string& search, const string& sort, int minPrice, int maxPrice)
-{
-    lock_guard<mutex> lock(dbMutex);
-
     string where = "WHERE 1=1";
 
-    if (categoryId > 0)
-        where += " AND p.category_id=" + to_string(categoryId);
+    if (f.categoryId > 0)
+        where += " AND p.category_id=" + to_string(f.categoryId);
 
-    if (!search.empty())
+    if (!f.search.empty())
     {
-        string like = likePattern(search);
+        string like = likePattern(f.search);
         where += " AND (p.name LIKE " + like + " OR p.description LIKE " + like +
                  " OR c.category_name LIKE " + like + ")";
     }
 
-    if (minPrice >= 0) where += " AND p.price>=" + to_string(minPrice);
-    if (maxPrice >= 0) where += " AND p.price<=" + to_string(maxPrice);
+    if (f.minPrice >= 0)  where += " AND p.price>=" + to_string(f.minPrice);
+    if (f.maxPrice >= 0)  where += " AND p.price<=" + to_string(f.maxPrice);
+    if (f.maxStock >= 0)  where += " AND p.stock<=" + to_string(f.maxStock);
+    if (f.inStockOnly)    where += " AND p.stock>0";
 
-    // The ORDER BY text is chosen from this fixed list, never copied from the URL.
     string order = "p.product_id";
-    if (sort == "price_asc")  order = "p.price ASC, p.product_id";
-    if (sort == "price_desc") order = "p.price DESC, p.product_id";
-    if (sort == "newest")     order = "p.product_id DESC";
+    if (f.sort == "price_asc")  order = "p.price ASC, p.product_id";
+    if (f.sort == "price_desc") order = "p.price DESC, p.product_id";
+    if (f.sort == "newest")     order = "p.product_id DESC";
+    if (f.sort == "name")       order = "p.name ASC";
+    if (f.sort == "stock_asc")  order = "p.stock ASC, p.product_id";
 
-    return dbRows(PRODUCT_SELECT + where + " ORDER BY " + order);
+    string sql = string(SELECT_PRODUCTS) + where + " ORDER BY " + order;
+
+    if (f.limit > 0)
+        sql += " LIMIT " + to_string(f.limit);
+
+    return db.rows(sql);
 }
 
-Rows cheapestProducts(int maxPrice, int limit)
+Row getProduct(int productId)
 {
-    lock_guard<mutex> lock(dbMutex);
-
-    return dbRows(PRODUCT_SELECT + "WHERE p.stock>0 AND p.price<=" + to_string(maxPrice) +
-                  " ORDER BY p.price ASC LIMIT " + to_string(limit));
+    Rows r = db.rows(string(SELECT_PRODUCTS) + "WHERE p.product_id=" + to_string(productId));
+    return r.empty() ? Row() : r[0];
 }
 
-Rows newestProducts(int limit)
+Rows relatedProducts(int categoryId, int excludeProductId, int limit)
 {
-    lock_guard<mutex> lock(dbMutex);
-
-    return dbRows(PRODUCT_SELECT + "WHERE p.stock>0 ORDER BY p.product_id DESC LIMIT " + to_string(limit));
+    return db.rows(string(SELECT_PRODUCTS) +
+                   "WHERE p.category_id=" + to_string(categoryId) +
+                   " AND p.product_id<>" + to_string(excludeProductId) +
+                   " ORDER BY p.product_id LIMIT " + to_string(limit));
 }
 
-// Joins each product with the total number of units sold in orders that were not cancelled.
 Rows bestSellers(int limit)
 {
-    lock_guard<mutex> lock(dbMutex);
-
-    return dbRows(PRODUCT_SELECT +
+    return db.rows(string(SELECT_PRODUCTS) +
         "JOIN (SELECT oi.product_id, SUM(oi.quantity) AS sold "
         "      FROM order_items oi JOIN orders o ON o.order_id=oi.order_id "
         "      WHERE o.status<>'CANCELLED' GROUP BY oi.product_id) s "
@@ -96,96 +84,68 @@ Rows bestSellers(int limit)
         "WHERE p.stock>0 ORDER BY s.sold DESC LIMIT " + to_string(limit));
 }
 
-Rows relatedProducts(int categoryId, int excludeProductId, int limit)
+// ------------------------------------------------------------
+//  Admin writes
+// ------------------------------------------------------------
+static string money2(double v)
 {
-    lock_guard<mutex> lock(dbMutex);
-
-    return dbRows(PRODUCT_SELECT + "WHERE p.category_id=" + to_string(categoryId) +
-                  " AND p.product_id<>" + to_string(excludeProductId) +
-                  " ORDER BY p.product_id LIMIT " + to_string(limit));
+    char buf[32];
+    snprintf(buf, sizeof(buf), "%.2f", v);
+    return buf;
 }
 
-// ---- admin: products ----------------------------------------------------------------
-
-Rows adminProductList(const string& search, int categoryId, bool lowStockOnly)
+static string validate(const ProductInput& in)
 {
-    lock_guard<mutex> lock(dbMutex);
-
-    string where = "WHERE 1=1";
-
-    if (categoryId > 0)
-        where += " AND p.category_id=" + to_string(categoryId);
-
-    if (!search.empty())
-    {
-        string like = likePattern(search);
-        where += " AND (p.name LIKE " + like + " OR p.description LIKE " + like + ")";
-    }
-
-    if (lowStockOnly)
-        return dbRows(PRODUCT_SELECT + where + " AND p.stock<=" + to_string(LOW_STOCK_LEVEL) +
-                      " ORDER BY p.stock ASC, p.product_id");
-
-    return dbRows(PRODUCT_SELECT + where + " ORDER BY p.product_id");
-}
-
-// Checks the values from the admin form. Returns "" if they are fine. (Caller holds dbMutex.)
-static string checkProductValues(const string& name, const string& description, double price, int stock, int categoryId)
-{
-    if (name.empty() || name.size() > 100)
+    if (in.name.empty() || in.name.size() > 100)
         return "Name is required (max 100 characters).";
 
-    if (description.size() > 255)
+    if (in.description.size() > 255)
         return "Description can be at most 255 characters.";
 
-    if (price < 0 || price > 99999999)
+    if (in.price < 0 || in.price > 99999999)
         return "Price must be between 0 and 99,999,999.";
 
-    if (stock < 0)
+    if (in.stock < 0)
         return "Stock cannot be negative.";
 
-    Rows found = dbRows("SELECT category_id FROM categories WHERE category_id=" + to_string(categoryId));
-    if (found.empty())
+    bool categoryExists = false;
+    for (const Category& c : categories())
+        if (c.id == in.categoryId) categoryExists = true;
+
+    if (!categoryExists)
         return "Please choose a valid category.";
 
     return "";
 }
 
-// Price as text with two decimals, for SQL: 499 -> "499.00".
-static string priceText(double price)
+string createProduct(const ProductInput& in, int& newId)
 {
-    char buffer[32];
-    snprintf(buffer, sizeof(buffer), "%.2f", price);
-    return buffer;
-}
-
-string createProduct(const string& name, const string& description, double price, int stock, int categoryId)
-{
-    lock_guard<mutex> lock(dbMutex);
-
-    string error = checkProductValues(name, description, price, stock, categoryId);
+    string error = validate(in);
     if (!error.empty()) return error;
 
-    Result r = dbRun("INSERT INTO products (name, description, price, stock, category_id) VALUES (" +
-                     dbQuote(name) + "," + dbQuote(description) + "," + priceText(price) + "," +
-                     to_string(stock) + "," + to_string(categoryId) + ")");
+    Result r = db.run(
+        "INSERT INTO products (name, description, price, stock, category_id) VALUES (" +
+        db.quote(in.name) + "," + db.quote(in.description) + "," + money2(in.price) + "," +
+        to_string(in.stock) + "," + to_string(in.categoryId) + ")");
 
-    return r.ok ? "" : "Database error: " + r.error;
+    if (!r.ok) return "Database error: " + r.error;
+
+    newId = (int)r.insertId;
+    return "";
 }
 
-string updateProduct(int productId, const string& name, const string& description, double price, int stock, int categoryId)
+string updateProduct(int productId, const ProductInput& in)
 {
-    lock_guard<mutex> lock(dbMutex);
-
-    string error = checkProductValues(name, description, price, stock, categoryId);
+    string error = validate(in);
     if (!error.empty()) return error;
 
-    Result r = dbRun("UPDATE products SET name=" + dbQuote(name) +
-                     ", description=" + dbQuote(description) +
-                     ", price=" + priceText(price) +
-                     ", stock=" + to_string(stock) +
-                     ", category_id=" + to_string(categoryId) +
-                     " WHERE product_id=" + to_string(productId));
+    Result r = db.run(
+        "UPDATE products SET name=" + db.quote(in.name) +
+        ", description=" + db.quote(in.description) +
+        ", price=" + money2(in.price) +
+        ", stock=" + to_string(in.stock) +
+        ", category_id=" + to_string(in.categoryId) +
+        " WHERE product_id=" + to_string(productId));
 
     return r.ok ? "" : "Database error: " + r.error;
 }
@@ -194,89 +154,29 @@ string setProductStock(int productId, int stock)
 {
     if (stock < 0) return "Stock cannot be negative.";
 
-    lock_guard<mutex> lock(dbMutex);
-
-    Result r = dbRun("UPDATE products SET stock=" + to_string(stock) +
-                     " WHERE product_id=" + to_string(productId));
+    Result r = db.run("UPDATE products SET stock=" + to_string(stock) +
+                      " WHERE product_id=" + to_string(productId));
 
     return r.ok ? "" : "Database error: " + r.error;
 }
 
-// A product that was ever ordered cannot be deleted (the order history needs it).
-// Otherwise it is removed from the carts first (foreign key), then deleted - in one transaction.
 string deleteProduct(int productId)
 {
-    lock_guard<mutex> lock(dbMutex);
+    Transaction tx;
 
-    Rows used = dbRows("SELECT COUNT(*) AS n FROM order_items WHERE product_id=" + to_string(productId));
+    Rows used = db.rows("SELECT COUNT(*) AS n FROM order_items WHERE product_id=" +
+                        to_string(productId));
 
     if (!used.empty() && col(used[0], "n") != "0")
-        return "This product appears in past orders, so it cannot be deleted. Set its stock to 0 instead.";
+        return "This product appears in past orders, so it cannot be deleted. "
+               "Set its stock to 0 instead.";
 
-    dbRun("START TRANSACTION");
+    // Remove it from any carts first (foreign key), then delete it.
+    db.run("DELETE FROM cart_items WHERE product_id=" + to_string(productId));
+    Result r = db.run("DELETE FROM products WHERE product_id=" + to_string(productId));
 
-    Result carts = dbRun("DELETE FROM cart_items WHERE product_id=" + to_string(productId));
-    if (!carts.ok) { dbRun("ROLLBACK"); return "Database error: " + carts.error; }
+    if (!r.ok) return "Database error: " + r.error;
 
-    Result product = dbRun("DELETE FROM products WHERE product_id=" + to_string(productId));
-    if (!product.ok) { dbRun("ROLLBACK"); return "Database error: " + product.error; }
-
-    dbRun("COMMIT");
+    tx.commit();
     return "";
-}
-
-// ---- admin: categories --------------------------------------------------------------
-
-Rows categoriesWithProductCount()
-{
-    lock_guard<mutex> lock(dbMutex);
-
-    return dbRows("SELECT c.category_id, c.category_name, COUNT(p.product_id) AS products "
-                  "FROM categories c LEFT JOIN products p ON p.category_id=c.category_id "
-                  "GROUP BY c.category_id, c.category_name ORDER BY c.category_id");
-}
-
-// Turns a MySQL error into a friendlier message for category names.
-static string categoryError(const string& mysqlError)
-{
-    if (mysqlError.find("Duplicate") != string::npos)
-        return "A category with that name already exists.";
-
-    return "Database error: " + mysqlError;
-}
-
-string createCategory(const string& name)
-{
-    if (name.empty() || name.size() > 50)
-        return "Category name is required (max 50 characters).";
-
-    lock_guard<mutex> lock(dbMutex);
-
-    Result r = dbRun("INSERT INTO categories (category_name) VALUES (" + dbQuote(name) + ")");
-    return r.ok ? "" : categoryError(r.error);
-}
-
-string renameCategory(int categoryId, const string& name)
-{
-    if (name.empty() || name.size() > 50)
-        return "Category name is required (max 50 characters).";
-
-    lock_guard<mutex> lock(dbMutex);
-
-    Result r = dbRun("UPDATE categories SET category_name=" + dbQuote(name) +
-                     " WHERE category_id=" + to_string(categoryId));
-    return r.ok ? "" : categoryError(r.error);
-}
-
-string deleteCategory(int categoryId)
-{
-    lock_guard<mutex> lock(dbMutex);
-
-    Rows used = dbRows("SELECT COUNT(*) AS n FROM products WHERE category_id=" + to_string(categoryId));
-
-    if (!used.empty() && col(used[0], "n") != "0")
-        return "This category still has products. Move or delete them first.";
-
-    Result r = dbRun("DELETE FROM categories WHERE category_id=" + to_string(categoryId));
-    return r.ok ? "" : "Database error: " + r.error;
 }

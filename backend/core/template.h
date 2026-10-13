@@ -1,18 +1,37 @@
 #pragma once
 #include <map>
 #include <string>
+#include <vector>
 
-// A tiny template engine. Pages are HTML files in frontend/templates/ with three kinds of placeholder:
+// ------------------------------------------------------------
+//  A tiny template engine, so the C++ code never contains HTML.
 //
-//   {{name}}           the value of "name", HTML-escaped (safe for text typed by users)
-//   {{{name}}}         the value of "name" inserted as it is (only for HTML the server built itself)
-//   {{> partial.html}} the contents of another template file (rendered with the same values)
+//  Handlers fill a Data object; the HTML lives in frontend/templates/.
 //
-// The values are a plain map from name to text. A name that is not in the map becomes "".
-typedef std::map<std::string, std::string> Vars;
+//    {{name}}                 value, HTML-escaped (safe for user text)
+//    {{{name}}}               value inserted as-is (already-safe HTML)
+//    {{#if name}} A {{else}} B {{/if}}   A when name is non-empty (or a non-empty list)
+//    {{#each items}} ... {{/each}}       repeat for every entry of the list "items"
+//    {{> partials/footer.html}}          include another template file
+//
+//  Inside {{#each}} the entry's own values are used first, then the page's.
+// ------------------------------------------------------------
+struct Data
+{
+    std::map<std::string, std::string>       values;
+    std::map<std::string, std::vector<Data>> lists;
 
-// Replaces < > & " ' with their HTML codes, so user text can never act as HTML (XSS protection).
+    Data& set(const std::string& key, const std::string& value);
+    Data& set(const std::string& key, const char* value);
+    Data& set(const std::string& key, int value);
+    Data& set(const std::string& key, long long value);
+    Data& flag(const std::string& key, bool on);          // on -> "1", off -> ""
+    Data& add(const std::string& listName, const Data& item);
+
+    void merge(const Data& other);                        // other's entries win
+};
+
 std::string htmlEscape(const std::string& text);
 
-// Reads frontend/templates/<file> and fills in the placeholders.
-std::string renderTemplate(const std::string& file, const Vars& vars);
+// Render frontend/templates/<file> with the given data.
+std::string renderTemplate(const std::string& file, const Data& data);

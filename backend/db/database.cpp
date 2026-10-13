@@ -1,95 +1,108 @@
 #include "database.h"
 #include "../config.h"
-#include <cstdlib>
+#include "../core/log.h"
+#include <chrono>
 #include <iostream>
+#include <vector>
 
 using namespace std;
 
-std::mutex dbMutex;
-static MYSQL* conn = nullptr;
+Database db;
 
-string col(const Row& row, const string& name)
+bool Database::connect()
 {
-    Row::const_iterator it = row.find(name);
-    return (it == row.end()) ? "" : it->second;
-}
+    conn_ = mysql_init(nullptr);
 
-// Opens the connection to MySQL. The password is read from the environment, not from the code.
-bool dbConnect()
-{
-    const char* password = getenv("ECOM_DB_PASS");
-    if (password == nullptr) password = "";
-
-    conn = mysql_init(nullptr);
-
-    if (!conn)
+    if (!conn_)
     {
         cout << "[DB] mysql_init failed!" << endl;
         return false;
     }
 
-    if (!mysql_real_connect(conn, DB_HOST, DB_USER, password, DB_NAME, DB_PORT, nullptr, 0))
+    if (!mysql_real_connect(conn_, config::dbHost.c_str(), config::dbUser.c_str(),
+                            config::dbPass.c_str(), config::dbName.c_str(),
+                            config::dbPort, nullptr, 0))
     {
-        cout << "[DB] Connection failed: " << mysql_error(conn) << endl;
-        cout << "[DB] Is MySQL running, and is the ECOM_DB_PASS environment variable set to your MySQL password?" << endl;
+        cout << "[DB] Connection failed: " << mysql_error(conn_) << endl;
         return false;
     }
 
-    mysql_set_character_set(conn, "utf8mb4");
+    mysql_set_character_set(conn_, "utf8mb4");
     cout << "[DB] Connected to MySQL successfully." << endl;
     return true;
 }
 
-void dbClose()
+void Database::disconnect()
 {
-    if (conn) mysql_close(conn);
-    conn = nullptr;
+    if (conn_) mysql_close(conn_);
+    conn_ = nullptr;
 }
 
-// Runs one SQL statement. For a SELECT the rows are copied into result.rows.
-Result dbRun(const string& sql)
+// Run one statement and, if a request is being logged, record it
+// (text, time taken, rows) for the admin "Server logs" page.
+Result Database::run(const string& sql)
+{
+    lock_guard<recursive_mutex> lock(mutex_);
+
+    auto started = chrono::steady_clock::now();
+    Result result = execute(sql);
+    double ms = chrono::duration<double, milli>(chrono::steady_clock::now() - started).count();
+
+    bool isSelect = !result.columns.empty();
+    addQueryToCurrentRequest(sql, ms, result.ok, result.error, isSelect,
+                             isSelect ? (long long)result.rows.size() : result.affectedRows);
+
+    return result;
+}
+
+// The actual MySQL call (no logging here).
+Result Database::execute(const string& sql)
 {
     Result result;
 
-    if (mysql_query(conn, sql.c_str()))
+    if (mysql_query(conn_, sql.c_str()))
     {
-        result.error = mysql_error(conn);
+        result.error = mysql_error(conn_);
         return result;
     }
 
     result.ok = true;
 
-    MYSQL_RES* res = mysql_store_result(conn);
+    MYSQL_RES* res = mysql_store_result(conn_);
 
-    if (!res)   // not a SELECT: INSERT / UPDATE / DELETE / START TRANSACTION ...
+    if (!res)
     {
-        result.affectedRows = (long long)mysql_affected_rows(conn);
-        result.insertId = (long long)mysql_insert_id(conn);
+        // Not a SELECT (INSERT / UPDATE / DELETE ...)
+        result.affectedRows = (long long)mysql_affected_rows(conn_);
+        result.insertId = (long long)mysql_insert_id(conn_);
         return result;
     }
 
-    unsigned int columnCount = mysql_num_fields(res);
+    unsigned int n = mysql_num_fields(res);
     MYSQL_FIELD* fields = mysql_fetch_fields(res);
 
-    MYSQL_ROW data;
-    while ((data = mysql_fetch_row(res)))
+    for (unsigned int i = 0; i < n; i++)
+        result.columns.push_back(fields[i].name);
+
+    MYSQL_ROW row;
+
+    while ((row = mysql_fetch_row(res)))
     {
-        Row row;
+        Row r;
 
-        for (unsigned int i = 0; i < columnCount; i++)
-            row[fields[i].name] = data[i] ? data[i] : "";
+        for (unsigned int i = 0; i < n; i++)
+            r[result.columns[i]] = row[i] ? row[i] : "";
 
-        result.rows.push_back(row);
+        result.rows.push_back(r);
     }
 
     mysql_free_result(res);
     return result;
 }
 
-// Like dbRun for a SELECT, but returns only the rows (an error gives an empty list).
-Rows dbRows(const string& sql)
+Rows Database::rows(const string& sql)
 {
-    Result r = dbRun(sql);
+    Result r = run(sql);
 
     if (!r.ok)
         cout << "[DB] Query failed: " << r.error << endl;
@@ -97,11 +110,64 @@ Rows dbRows(const string& sql)
     return r.rows;
 }
 
-// Puts text between quotes and escapes dangerous characters (prevents SQL injection).
-string dbQuote(const string& text)
+string Database::quote(const string& text)
 {
-    string buffer(text.size() * 2 + 1, '\0');
-    unsigned long length = mysql_real_escape_string(conn, &buffer[0], text.c_str(), (unsigned long)text.size());
+    lock_guard<recursive_mutex> lock(mutex_);
 
-    return "'" + buffer.substr(0, length) + "'";
+    vector<char> buf(text.size() * 2 + 1);
+    unsigned long n = mysql_real_escape_string(conn_, buf.data(), text.c_str(),
+                                               (unsigned long)text.size());
+
+    return "'" + string(buf.data(), n) + "'";
+}
+
+// ------------------------------------------------------------
+//  Transaction
+// ------------------------------------------------------------
+Transaction::Transaction()
+{
+    db.run("START TRANSACTION");
+}
+
+Transaction::~Transaction()
+{
+    if (!done_) db.run("ROLLBACK");
+}
+
+void Transaction::commit()
+{
+    db.run("COMMIT");
+    done_ = true;
+}
+
+// ------------------------------------------------------------
+//  Schema upgrade: the admin panel needs users.role
+// ------------------------------------------------------------
+// Adds a column if the table does not have it yet.
+static bool ensureColumn(const string& table, const string& column, const string& definition,
+                         const string& why)
+{
+    Rows has = db.rows(
+        "SELECT COUNT(*) AS n FROM information_schema.COLUMNS "
+        "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='" + table + "' AND COLUMN_NAME='" + column + "'");
+
+    if (!has.empty() && col(has[0], "n") != "0")
+        return true;
+
+    Result r = db.run("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
+
+    if (!r.ok)
+    {
+        cout << "[DB] Could not add " << table << "." << column << ": " << r.error << endl;
+        return false;
+    }
+
+    cout << "[DB] Added " << table << "." << column << " column (" << why << ")." << endl;
+    return true;
+}
+
+bool migrateDatabase()
+{
+    return ensureColumn("users", "role", "VARCHAR(10) NOT NULL DEFAULT 'CUSTOMER'", "admin support")
+        && ensureColumn("orders", "deliver_at", "DATETIME NULL", "demo auto-delivery");
 }

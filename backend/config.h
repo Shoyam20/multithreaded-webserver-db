@@ -1,14 +1,32 @@
 #pragma once
+#include <string>
 
-// Settings for the whole project. Change a value here and rebuild.
-// The only setting NOT here is the MySQL password: it is read from the
-// environment variable ECOM_DB_PASS (see db/database.cpp), never from code.
+// All tunable settings live here. Database settings can be overridden with
+// environment variables so the password does not have to be edited in code:
+//   ECOM_DB_HOST, ECOM_DB_USER, ECOM_DB_PASS, ECOM_DB_NAME, ECOM_DB_PORT
+namespace config
+{
+    extern std::string dbHost;
+    extern std::string dbUser;
+    extern std::string dbPass;
+    extern std::string dbName;
+    extern int         dbPort;
 
-const int         SERVER_PORT     = 8080;   // http://localhost:8080
-const int         WORKER_COUNT    = 10;     // threads in the pool that handle requests
-const int         LOW_STOCK_LEVEL = 5;      // admin "low stock" warning level
+    extern int         serverPort;
+    extern int         workerThreads;
+    extern int         lowStockThreshold;   // "low stock" warning level in the admin panel
 
-const char* const DB_HOST = "localhost";
-const char* const DB_USER = "root";
-const char* const DB_NAME = "ecommerce_db";
-const int         DB_PORT = 3306;
+    extern bool        logQueriesToConsole; // also print each request's SQL in the terminal (default off; ECOM_LOG_SQL=1)
+    extern int         logBufferSize;       // how many recent requests the admin log page keeps
+
+    // Demo delivery: an order is marked DELIVERED a random time after it is placed.
+    // The customer can cancel (and everything is rolled back) until then.
+    extern int         deliveryMinSeconds;
+    extern int         deliveryMaxSeconds;
+    extern int         deliveryCheckSeconds; // how often the background thread looks for due orders
+
+    // Folder that contains templates/ and static/ (found automatically).
+    extern std::string frontendDir;
+
+    void load();   // apply environment overrides and locate the frontend folder
+}

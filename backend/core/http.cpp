@@ -175,6 +175,7 @@ bool parseRequest(const string& raw, Request& req)
     if (req.method.empty() || target.empty()) return false;
 
     size_t q = target.find('?');
+    req.target = target;
     req.path = urlDecode(q == string::npos ? target : target.substr(0, q));
     if (q != string::npos) req.query = parsePairs(target.substr(q + 1));
 
