@@ -27,28 +27,3 @@ window.addEventListener('load', function () {
   var flash = document.querySelector('.flash');
   if (flash) setTimeout(function () { flash.style.display = 'none'; }, 5000);
 });
-
-// ---- delivery countdown: <b class="countdown" data-seconds="75"> shows 1:15, 1:14 ... ----
-// When it reaches 0 the page reloads once the server has marked the order delivered.
-(function () {
-  var counters = document.querySelectorAll('.countdown');
-  if (!counters.length) return;
-
-  function show(el, s) {
-    var m = Math.floor(s / 60), r = s % 60;
-    el.textContent = m + ':' + (r < 10 ? '0' : '') + r;
-  }
-
-  counters.forEach(function (el) {
-    var left = parseInt(el.dataset.seconds || '0', 10);
-    show(el, left);
-
-    var timer = setInterval(function () {
-      left--;
-      if (left > 0) { show(el, left); return; }
-      clearInterval(timer);
-      el.textContent = 'delivering...';
-      setTimeout(function () { location.reload(); }, 6000);   // the server checks every few seconds
-    }, 1000);
-  });
-})();

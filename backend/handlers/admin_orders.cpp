@@ -6,7 +6,6 @@
 using namespace std;
 
 static const char* ORDER_STATUSES[]   = { "PLACED", "SHIPPED", "DELIVERED", "CANCELLED" };
-static const char* PAYMENT_STATUSES[] = { "PENDING", "PAID", "FAILED", "REFUNDED" };
 
 // All orders, with tabs to filter by status.
 Response adminOrders(Request& req)
@@ -65,8 +64,6 @@ Response adminOrderDetail(Request& req)
     page.set("paymentMethod", col(order, "payment_method"));
     page.set("paymentStatus", col(order, "payment_status"));
     page.set("paymentClass", statusClass(col(order, "payment_status")));
-    page.set("deliverAt", col(order, "deliver_at")).set("secondsLeft", col(order, "seconds_left"));
-    page.flag("onTheWay", (col(order, "status") == "PLACED" || col(order, "status") == "SHIPPED") && !col(order, "seconds_left").empty());
 
     // A cancelled order is final (its stock was already returned).
     page.flag("canChange", col(order, "status") != "CANCELLED");
@@ -87,13 +84,6 @@ Response adminOrderDetail(Request& req)
         page.add("statusOptions", opt);
     }
 
-    for (const char* s : PAYMENT_STATUSES)
-    {
-        Data opt;
-        opt.set("value", s).flag("selected", col(order, "payment_status") == s);
-        page.add("paymentOptions", opt);
-    }
-
     return renderAdminPage(req, "Order #" + to_string(id), "admin/order_detail.html", "orders", page);
 }
 
@@ -107,16 +97,4 @@ Response adminOrderStatus(Request& req)
                                 "/admin/order?id=" + to_string(id), "Back to order");
 
     return Response::redirect("/admin/order?id=" + to_string(id) + "&notice=status");
-}
-
-Response adminOrderPayment(Request& req)
-{
-    int id = req.intParam("id", 0);
-    string error = updatePaymentStatus(id, req.param("status"));
-
-    if (!error.empty())
-        return adminMessagePage(req, "Could not update payment", error,
-                                "/admin/order?id=" + to_string(id), "Back to order");
-
-    return Response::redirect("/admin/order?id=" + to_string(id) + "&notice=payment");
 }

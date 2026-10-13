@@ -2,8 +2,8 @@
 #include "../db/database.h"
 #include <string>
 
-// Order status:   PLACED -> SHIPPED -> DELIVERED      (or CANCELLED at any time before delivery)
-// Payment status: PENDING, PAID, FAILED, REFUNDED, CANCELLED
+// Order status:   PLACED -> SHIPPED -> DELIVERED      (or CANCELLED before delivery)
+// Payment status follows the order: PENDING, then PAID when delivered, or CANCELLED.
 
 struct PlaceOrderResult
 {
@@ -31,14 +31,7 @@ Rows orderItems(int orderId);                     // product_id, name, quantity,
 
 // ---- admin ----
 bool        isValidOrderStatus(const std::string& status);
-bool        isValidPaymentStatus(const std::string& status);
 std::string updateOrderStatus(int orderId, const std::string& newStatus);
-std::string updatePaymentStatus(int orderId, const std::string& newStatus);
-
-// ---- demo delivery ----
-// Marks orders whose delivery time (orders.deliver_at) has passed as DELIVERED.
-// Returns how many orders were delivered. Called by a background thread.
-int deliverDueOrders();
 
 // Customer-side cancel: allowed until the order is delivered. Restores stock and
 // cancels the payment. Returns "" on success or a message for the customer.

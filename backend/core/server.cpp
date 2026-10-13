@@ -1,9 +1,6 @@
 #include <winsock2.h>
 #include "server.h"
-#include "log.h"
-#include <chrono>
 #include <condition_variable>
-#include <ctime>
 #include <iostream>
 #include <mutex>
 #include <queue>
@@ -19,21 +16,11 @@ using namespace std;
 static queue<SOCKET>      pending;
 static mutex              pendingMutex;
 static condition_variable pendingReady;
+static mutex              printMutex;       // so lines printed by different workers do not mix
 
 static const size_t MAX_HEADER_BYTES = 64 * 1024;
 static const size_t MAX_BODY_BYTES   = 1024 * 1024;
 
-// "2026-10-13 14:02:11" in local time
-static string currentTimeText()
-{
-    time_t now = time(nullptr);
-    tm local{};
-    localtime_s(&local, &now);
-
-    char buf[32];
-    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", &local);
-    return buf;
-}
 
 // Read the whole HTTP request (headers + body) from the socket.
 static bool readRequest(SOCKET sock, string& raw)
@@ -99,21 +86,12 @@ static void worker(int id, RequestHandler handler)
             continue;
         }
 
-        // From here until the response is built, every SQL statement this
-        // worker runs is attached to 'log' (see core/log.h).
-        RequestLog log;
-        bool tracked = shouldLogPath(req.path);
-
-        if (tracked)
+        // The one line that shows which worker thread took this request.
         {
-            log.worker = id;
-            log.method = req.method;
-            log.target = req.target;
-            log.time = currentTimeText();
-            beginRequestLog(&log);
+            lock_guard<mutex> lock(printMutex);
+            cout << "[Worker " << id << "] " << req.method << " " << req.path << endl;
         }
 
-        auto started = chrono::steady_clock::now();
         Response res;
 
         try
@@ -122,20 +100,8 @@ static void worker(int id, RequestHandler handler)
         }
         catch (const exception& e)
         {
-            cout << "[W" << id << "] ERROR: " << e.what() << endl;
+            cout << "[Worker " << id << "] ERROR: " << e.what() << endl;
             res = Response::html("<h1>500 - Something went wrong</h1>", 500);
-        }
-
-        if (tracked)
-        {
-            endRequestLog();
-            log.status = res.status;
-            log.ms = chrono::duration<double, milli>(chrono::steady_clock::now() - started).count();
-
-            if (req.user.loggedIn())
-                log.user = req.user.name + (req.user.isAdmin() ? " (admin)" : "");
-
-            recordRequest(log);          // keep it for the admin page + print it
         }
 
         sendAll(client, buildHttpResponse(res));

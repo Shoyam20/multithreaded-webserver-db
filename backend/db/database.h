@@ -34,14 +34,13 @@ public:
     bool connect();
     void disconnect();
 
-    Result run(const std::string& sql);          // any statement (also logged for the admin page)
+    Result run(const std::string& sql);          // any statement
     Rows   rows(const std::string& sql);         // SELECT, ignoring errors
     std::string quote(const std::string& text);  // 'escaped text' (prevents SQL injection)
 
     std::recursive_mutex& mutex() { return mutex_; }
 
 private:
-    Result execute(const std::string& sql);      // the raw MySQL call
     MYSQL* conn_ = nullptr;
     std::recursive_mutex mutex_;
 };
@@ -71,5 +70,3 @@ private:
     bool   done_ = false;
 };
 
-// Creates the admin-related column if missing, etc. Run once at startup.
-bool migrateDatabase();

@@ -4,50 +4,5 @@
   <a class="kpi warn" href="/admin/orders?status=PLACED"><span>Waiting to ship</span><strong>{{pendingOrders}}</strong></a>
   <a class="kpi" href="/admin/users"><span>Users</span><strong>{{users}}</strong></a>
   <a class="kpi" href="/admin/products"><span>Products</span><strong>{{products}}</strong></a>
-  <a class="kpi bad" href="/admin/products?low=1"><span>Low stock (≤ {{lowStockLevel}})</span><strong>{{lowStockCount}}</strong></a>
-  <a class="kpi" href="/admin/sessions"><span>Active sessions</span><strong>{{activeSessions}}</strong></a>
-</div>
-
-<div class="cols">
-  <section class="panel">
-    <h2>Recent orders</h2>
-    {{#if recentOrders}}
-    <table>
-      <tr><th>#</th><th>Customer</th><th>Date</th><th>Total</th><th>Status</th></tr>
-      {{#each recentOrders}}
-        <tr>
-          <td><a href="/admin/order?id={{id}}">#{{id}}</a></td>
-          <td>{{customer}}</td><td>{{date}}</td><td>{{total}}</td>
-          <td><span class="pill {{statusClass}}">{{status}}</span></td>
-        </tr>
-      {{/each}}
-    </table>
-    {{else}}<p class="muted">No orders yet.</p>{{/if}}
-
-    <h3>Orders by status</h3>
-    <p>{{#each statuses}}<span class="pill {{statusClass}}">{{status}}: {{n}}</span> {{/each}}</p>
-  </section>
-
-  <section class="panel">
-    <h2>Low stock</h2>
-    {{#if lowStock}}
-    <table>
-      <tr><th>Product</th><th>Stock</th><th>Restock to</th></tr>
-      {{#each lowStock}}
-        <tr>
-          <td><a href="/admin/products/edit?id={{id}}">{{name}}</a></td>
-          <td><span class="pill {{#if soldOut}}red{{else}}amber{{/if}}">{{stock}}</span></td>
-          <td>
-            <form method="POST" action="/admin/products/stock" class="inline">
-              <input type="hidden" name="id" value="{{id}}">
-              <input type="hidden" name="back" value="/admin">
-              <input class="narrow" type="number" name="stock" min="0" value="{{stock}}">
-              <button class="btn sm" type="submit">Set</button>
-            </form>
-          </td>
-        </tr>
-      {{/each}}
-    </table>
-    {{else}}<p class="muted">Every product is above the low-stock level. 🎉</p>{{/if}}
-  </section>
+  <a class="kpi bad" href="/admin/products?low=1"><span>Low stock (&le; {{lowStockLevel}})</span><strong>{{lowStockCount}}</strong></a>
 </div>

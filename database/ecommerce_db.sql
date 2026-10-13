@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
     user_id    INT AUTO_INCREMENT PRIMARY KEY,
     email      VARCHAR(100) NOT NULL UNIQUE,
     name       VARCHAR(100) NOT NULL,
-    password   VARCHAR(255) NOT NULL,    
+    password   VARCHAR(255) NOT NULL,
+    role       VARCHAR(10)  NOT NULL DEFAULT 'CUSTOMER',   -- 'CUSTOMER' or 'ADMIN'
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

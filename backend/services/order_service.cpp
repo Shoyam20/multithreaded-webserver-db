@@ -1,9 +1,5 @@
 #include "order_service.h"
 #include "cart_service.h"
-#include "../config.h"
-#include <chrono>
-#include <mutex>
-#include <random>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -21,16 +17,6 @@ static string paiseToText(long long paise)
     char buf[32];
     snprintf(buf, sizeof(buf), "%lld.%02lld", paise / 100, paise % 100);
     return buf;
-}
-
-// A random delivery delay between the configured minimum and maximum (seconds).
-static int randomDeliverySeconds()
-{
-    static mt19937 gen((unsigned)chrono::steady_clock::now().time_since_epoch().count());
-    static mutex genMutex;
-
-    lock_guard<mutex> lock(genMutex);
-    return uniform_int_distribution<int>(config::deliveryMinSeconds, config::deliveryMaxSeconds)(gen);
 }
 
 // ------------------------------------------------------------
@@ -73,10 +59,8 @@ PlaceOrderResult placeOrder(int userId)
     string total = paiseToText(totalPaise);
 
     // 2. Create the order.
-    // Demo: schedule the delivery 1-2 minutes from now (see deliverDueOrders).
-    Result order = db.run("INSERT INTO orders (user_id, cart_id, total, status, deliver_at) VALUES (" +
-                          to_string(userId) + "," + to_string(cartId) + "," + total + ",'PLACED'," +
-                          "DATE_ADD(NOW(), INTERVAL " + to_string(randomDeliverySeconds()) + " SECOND))");
+    Result order = db.run("INSERT INTO orders (user_id, cart_id, total, status) VALUES (" +
+                          to_string(userId) + "," + to_string(cartId) + "," + total + ",'PLACED')");
     if (!order.ok) { out.error = order.error; return out; }
 
     out.orderId = order.insertId;
@@ -121,8 +105,7 @@ Rows listOrders(const OrderFilter& f)
     if (!f.status.empty())   where += " AND o.status=" + db.quote(f.status);
 
     string sql =
-        "SELECT o.order_id, o.total, o.status, o.created_at, o.deliver_at, "
-        "GREATEST(TIMESTAMPDIFF(SECOND, NOW(), o.deliver_at), 0) AS seconds_left, u.name AS customer, u.email, "
+        "SELECT o.order_id, o.total, o.status, o.created_at, u.name AS customer, u.email, "
         "COALESCE(p.method,'-') AS payment_method, COALESCE(p.status,'-') AS payment_status "
         "FROM orders o JOIN users u ON u.user_id=o.user_id "
         "LEFT JOIN payments p ON p.order_id=o.order_id " + where +
@@ -136,8 +119,7 @@ Rows listOrders(const OrderFilter& f)
 Row getOrder(int orderId)
 {
     Rows r = db.rows(
-        "SELECT o.order_id, o.total, o.status, o.created_at, o.user_id, o.deliver_at, "
-        "GREATEST(TIMESTAMPDIFF(SECOND, NOW(), o.deliver_at), 0) AS seconds_left, u.name AS customer, u.email, "
+        "SELECT o.order_id, o.total, o.status, o.created_at, o.user_id, u.name AS customer, u.email, "
         "COALESCE(p.method,'-') AS payment_method, COALESCE(p.status,'-') AS payment_status "
         "FROM orders o JOIN users u ON u.user_id=o.user_id "
         "LEFT JOIN payments p ON p.order_id=o.order_id WHERE o.order_id=" + to_string(orderId));
@@ -161,11 +143,6 @@ Rows orderItems(int orderId)
 bool isValidOrderStatus(const string& s)
 {
     return s == "PLACED" || s == "SHIPPED" || s == "DELIVERED" || s == "CANCELLED";
-}
-
-bool isValidPaymentStatus(const string& s)
-{
-    return s == "PENDING" || s == "PAID" || s == "FAILED" || s == "REFUNDED";
 }
 
 string updateOrderStatus(int orderId, const string& newStatus)
@@ -202,9 +179,8 @@ string updateOrderStatus(int orderId, const string& newStatus)
             "SET p.stock=p.stock+oi.quantity WHERE oi.order_id=" + id);
         if (!restock.ok) return "Database error: " + restock.error;
 
-        // Money already taken is refunded; otherwise the payment is just cancelled.
-        string payment = (col(order, "payment_status") == "PAID") ? "REFUNDED" : "CANCELLED";
-        db.run("UPDATE payments SET status='" + payment + "' WHERE order_id=" + id);
+        // The payment follows the order: cancelled order -> cancelled payment.
+        db.run("UPDATE payments SET status='CANCELLED' WHERE order_id=" + id);
     }
     else if (newStatus == "DELIVERED")
     {
@@ -218,46 +194,6 @@ string updateOrderStatus(int orderId, const string& newStatus)
 
     tx.commit();
     return "";
-}
-
-string updatePaymentStatus(int orderId, const string& newStatus)
-{
-    if (!isValidPaymentStatus(newStatus))
-        return "Unknown payment status.";
-
-    Result r = db.run("UPDATE payments SET status=" + db.quote(newStatus) +
-                      ", paid_at=CURRENT_TIMESTAMP WHERE order_id=" + to_string(orderId));
-
-    if (!r.ok) return "Database error: " + r.error;
-    if (r.affectedRows == 0) return "Payment record not found.";
-
-    return "";
-}
-
-// ------------------------------------------------------------
-//  Demo auto-delivery
-// ------------------------------------------------------------
-// Called every few seconds by a background thread (see main.cpp).
-// Marks every order whose delivery time has come as DELIVERED and its
-// cash-on-delivery payment as PAID - both changes happen together.
-int deliverDueOrders()
-{
-    Transaction tx;
-
-    db.run("UPDATE payments p JOIN orders o ON o.order_id=p.order_id "
-           "SET p.status='PAID', p.paid_at=CURRENT_TIMESTAMP "
-           "WHERE o.status IN ('PLACED','SHIPPED') AND o.deliver_at IS NOT NULL "
-           "AND o.deliver_at<=NOW() AND p.method='COD' AND p.status='PENDING'");
-
-    Result r = db.run("UPDATE orders SET status='DELIVERED' "
-                      "WHERE status IN ('PLACED','SHIPPED') AND deliver_at IS NOT NULL "
-                      "AND deliver_at<=NOW()");
-
-    if (!r.ok)
-        return 0;               // tx not committed -> rolled back
-
-    tx.commit();
-    return (int)r.affectedRows;
 }
 
 // A customer may cancel their own order until it has been delivered.
@@ -277,7 +213,6 @@ string cancelOrderByCustomer(int userId, int orderId)
     if (status == "DELIVERED")
         return "Too late - this order has already been delivered, so it can no longer be cancelled.";
 
-    // updateOrderStatus re-checks the status inside its own transaction, so even if
-    // the delivery thread wins the race at this very moment, a delivered order is never cancelled.
+    // updateOrderStatus checks the status again inside its own transaction.
     return updateOrderStatus(orderId, "CANCELLED");
 }

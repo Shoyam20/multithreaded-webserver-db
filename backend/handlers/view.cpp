@@ -81,7 +81,7 @@ static const Notice notices[] = {
     { "added",        "🛒 Item added to your cart.", false },
     { "removed",      "🗑️ Item removed from your cart.", false },
     { "updated",      "✅ Cart updated.", false },
-    { "ordered",      "📦 Order placed! Demo: it will be delivered in about 1-2 minutes - you can cancel until then.", false },
+    { "ordered",      "📦 Order placed successfully! You can cancel it until it is delivered.", false },
     { "cancelled",    "↩️ Order cancelled. The items went back to stock and the payment was cancelled.", false },
     { "needlogin",    "Please sign in to continue.", true },
     { "forbidden",    "You do not have access to the admin panel.", true },
@@ -90,9 +90,6 @@ static const Notice notices[] = {
     { "deleted",      "🗑️ Deleted.", false },
     { "stock",        "✅ Stock updated.", false },
     { "status",       "✅ Order status updated.", false },
-    { "payment",      "✅ Payment status updated.", false },
-    { "role",         "✅ User role updated.", false },
-    { "sessionended", "✅ Session ended.", false },
 };
 
 // ------------------------------------------------------------

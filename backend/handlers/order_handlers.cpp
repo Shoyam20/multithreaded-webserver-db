@@ -75,15 +75,9 @@ Response myOrdersPage(Request& req)
         o.set("paymentStatus", col(order, "payment_status"));
         o.set("paymentClass", statusClass(col(order, "payment_status")));
 
-        // Demo delivery: show a countdown while the order is on its way, and let the
-        // customer cancel until it is delivered.
+        // A customer may cancel until the order is delivered.
         string status = col(order, "status");
-        bool onTheWay = (status == "PLACED" || status == "SHIPPED");
-        string secondsLeft = col(order, "seconds_left");
-
-        o.flag("canCancel", onTheWay);
-        o.flag("hasCountdown", onTheWay && !secondsLeft.empty());
-        o.set("secondsLeft", secondsLeft);
+        o.flag("canCancel", status == "PLACED" || status == "SHIPPED");
         o.flag("isDelivered", status == "DELIVERED");
         o.flag("isCancelled", status == "CANCELLED");
 

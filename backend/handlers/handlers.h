@@ -31,8 +31,6 @@ Response mySessionsPage(Request& req);
 
 // ---- admin: overview & raw tables (admin_dashboard.cpp) ----
 Response adminDashboard(Request& req);
-Response adminTables(Request& req);
-Response adminTableView(Request& req);
 
 // ---- admin: products, stock, categories (admin_catalog.cpp) ----
 Response adminProducts(Request& req);
@@ -48,15 +46,7 @@ Response adminCategoryDelete(Request& req);
 Response adminOrders(Request& req);
 Response adminOrderDetail(Request& req);
 Response adminOrderStatus(Request& req);
-Response adminOrderPayment(Request& req);
 
 // ---- admin: users & sessions (admin_users.cpp) ----
 Response adminUsers(Request& req);
-Response adminUserRole(Request& req);
-Response adminSessions(Request& req);
-Response adminSessionEnd(Request& req);
 
-// ---- admin: server log - workers and SQL (admin_logs.cpp) ----
-Response adminLogs(Request& req);
-Response adminLogsFeed(Request& req);       // just the panel, for live refresh
-Response adminLogsClear(Request& req);

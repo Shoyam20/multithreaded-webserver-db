@@ -3,12 +3,9 @@
 #include "core/server.h"
 #include "db/database.h"
 #include "services/category_service.h"
-#include "services/order_service.h"
 #include "services/user_service.h"
-#include <chrono>
 #include <iostream>
 #include <string>
-#include <thread>
 
 using namespace std;
 
@@ -21,9 +18,6 @@ int main(int argc, char** argv)
     config::load();
 
     if (!db.connect())
-        return 1;
-
-    if (!migrateDatabase())
         return 1;
 
     loadCategories();
@@ -44,20 +38,6 @@ int main(int argc, char** argv)
     if (countAdmins() == 0)
         cout << "[Admin] No admin account yet. Sign up on the website, then run:\n"
                 "        server.exe --make-admin your@email.com" << endl;
-
-    // Demo: a background thread delivers orders whose time has come
-    // (see deliverDueOrders in services/order_service.cpp).
-    thread([]
-    {
-        while (true)
-        {
-            this_thread::sleep_for(chrono::seconds(config::deliveryCheckSeconds));
-            deliverDueOrders();
-        }
-    }).detach();
-
-    cout << "[Demo] Orders are delivered automatically " << config::deliveryMinSeconds << "-"
-         << config::deliveryMaxSeconds << " seconds after checkout (customers can cancel until then)." << endl;
 
     int exitCode = runServer(config::serverPort, config::workerThreads, handleRequest);
 

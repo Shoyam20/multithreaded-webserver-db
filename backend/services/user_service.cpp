@@ -20,35 +20,32 @@ static string randomHex(int length)
     return out;
 }
 
-// ------------------------------------------------------------
-//  Passwords
-//  Stored as  sha256$<salt>$<hash>  (the hash is computed by MySQL's SHA2).
-//  Accounts created before this change still hold plain text; they are
-//  upgraded to the hashed format the next time they log in.
-// ------------------------------------------------------------
+// Passwords are never stored as typed. We store  sha256$<salt>$<hash>  where
+// hash = SHA-256(salt + password), computed by MySQL's SHA2().
+// The random salt makes two users with the same password get different hashes.
 static string saltedHash(const string& salt, const string& password)
 {
-    Rows r = db.rows("SELECT SHA2(CONCAT(" + db.quote(salt) + "," + db.quote(password) +
-                     "),256) AS h");
+    Rows r = db.rows("SELECT SHA2(CONCAT(" + db.quote(salt) + "," + db.quote(password) + "),256) AS h");
     return r.empty() ? "" : col(r[0], "h");
 }
 
+// Text to store in users.password for a new account.
 static string makePasswordRecord(const string& password)
 {
     string salt = randomHex(16);
     return "sha256$" + salt + "$" + saltedHash(salt, password);
 }
 
+// Does the typed password match the stored "sha256$salt$hash" text?
 static bool passwordMatches(const string& stored, const string& password)
 {
-    if (stored.compare(0, 7, "sha256$") != 0)
-        return stored == password;                          // old plain-text account
+    size_t secondDollar = stored.find('$', 7);
+    if (stored.compare(0, 7, "sha256$") != 0 || secondDollar == string::npos)
+        return false;
 
-    size_t second = stored.find('$', 7);
-    if (second == string::npos) return false;
-
-    string salt = stored.substr(7, second - 7);
-    return stored.substr(second + 1) == saltedHash(salt, password);
+    string salt = stored.substr(7, secondDollar - 7);
+    string hash = stored.substr(secondDollar + 1);
+    return hash == saltedHash(salt, password);
 }
 
 // ------------------------------------------------------------
@@ -97,11 +94,6 @@ string logIn(const string& email, const string& password, User& user)
     user.name  = col(row, "name");
     user.email = col(row, "email");
     user.role  = col(row, "role");
-
-    // Upgrade an old plain-text password to the hashed format.
-    if (col(row, "password").compare(0, 7, "sha256$") != 0)
-        db.run("UPDATE users SET password=" + db.quote(makePasswordRecord(password)) +
-               " WHERE user_id=" + to_string(user.id));
 
     return "";
 }
@@ -160,14 +152,6 @@ Rows sessionsForUser(int userId)
                    " ORDER BY login_time DESC LIMIT 20");
 }
 
-Rows allSessions(int limit)
-{
-    return db.rows("SELECT s.session_id, u.name, u.email, s.login_time, s.last_activity, "
-                   "s.logout_time, s.is_active "
-                   "FROM user_sessions s JOIN users u ON s.user_id=u.user_id "
-                   "ORDER BY s.is_active DESC, s.last_activity DESC LIMIT " + to_string(limit));
-}
-
 // ------------------------------------------------------------
 //  Admin
 // ------------------------------------------------------------
@@ -175,20 +159,8 @@ Rows listUsers()
 {
     return db.rows(
         "SELECT u.user_id, u.name, u.email, COALESCE(u.role,'CUSTOMER') AS role, u.created_at, "
-        "(SELECT COUNT(*) FROM orders o WHERE o.user_id=u.user_id) AS orders, "
-        "(SELECT COUNT(*) FROM user_sessions s WHERE s.user_id=u.user_id AND s.is_active=TRUE) AS active_sessions "
+        "(SELECT COUNT(*) FROM orders o WHERE o.user_id=u.user_id) AS orders "
         "FROM users u ORDER BY u.user_id");
-}
-
-string setUserRole(int userId, const string& role)
-{
-    if (role != "CUSTOMER" && role != "ADMIN")
-        return "Unknown role.";
-
-    Result r = db.run("UPDATE users SET role=" + db.quote(role) +
-                      " WHERE user_id=" + to_string(userId));
-
-    return r.ok ? "" : "Database error: " + r.error;
 }
 
 bool makeAdminByEmail(const string& email)

@@ -19,7 +19,6 @@
     <h2>Order #{{id}}</h2>
     <p><b>{{customer}}</b><br><span class="muted">{{email}}</span></p>
     <p class="muted">Placed {{date}}</p>
-    {{#if deliverAt}}<p class="muted">Demo auto-delivery at {{deliverAt}}{{#if onTheWay}} - in <b class="countdown" data-seconds="{{secondsLeft}}">--:--</b>{{/if}}</p>{{/if}}
     <p>Order status: <span class="pill {{statusClass}}">{{status}}</span><br>
        Payment: {{paymentMethod}} · <span class="pill {{paymentClass}}">{{paymentStatus}}</span></p>
 
@@ -33,15 +32,6 @@
         <button class="btn" type="submit">Update status</button>
         <small class="muted">Cancelling returns the items to stock and cannot be undone.
           Marking DELIVERED marks cash-on-delivery as PAID.</small>
-      </form>
-
-      <form method="POST" action="/admin/order/payment" class="stack">
-        <input type="hidden" name="id" value="{{id}}">
-        <label>Change payment status</label>
-        <select name="status">
-          {{#each paymentOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{value}}</option>{{/each}}
-        </select>
-        <button class="btn ghost" type="submit">Update payment</button>
       </form>
     {{else}}
       <div class="err">This order was cancelled and can no longer be changed.</div>

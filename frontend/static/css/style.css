@@ -214,5 +214,4 @@ footer h4{color:#fff;margin:0 0 10px}footer a{display:block;color:#b8c0d6;font-s
 
 /* ---------- order card footer: countdown / cancel ---------- */
 .ofoot{display:flex;gap:16px;align-items:center;flex-wrap:wrap;padding:12px 20px;border-top:1px solid var(--line);background:#fbfbfe}
-.ofoot .eta{font-size:14px}.ofoot .eta b{font-size:17px;color:var(--brand);font-variant-numeric:tabular-nums}
 .ofoot .done{color:var(--ok);font-weight:600}

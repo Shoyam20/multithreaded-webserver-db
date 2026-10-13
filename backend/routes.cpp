@@ -52,19 +52,10 @@ Router buildRoutes()
     r.get ("/admin/orders",             requireAdmin(adminOrders));
     r.get ("/admin/order",              requireAdmin(adminOrderDetail));      // ?id=7
     r.post("/admin/order/status",       requireAdmin(adminOrderStatus));
-    r.post("/admin/order/payment",      requireAdmin(adminOrderPayment));
 
     r.get ("/admin/users",              requireAdmin(adminUsers));
-    r.post("/admin/users/role",         requireAdmin(adminUserRole));
-    r.get ("/admin/sessions",           requireAdmin(adminSessions));
-    r.post("/admin/sessions/end",       requireAdmin(adminSessionEnd));
 
-    r.get ("/admin/logs",               requireAdmin(adminLogs));             // ?worker=2&errors=1
-    r.get ("/admin/logs/feed",          requireAdmin(adminLogsFeed));         // live refresh fragment
-    r.post("/admin/logs/clear",         requireAdmin(adminLogsClear));
 
-    r.get ("/admin/tables",             requireAdmin(adminTables));
-    r.get ("/admin/table",              requireAdmin(adminTableView));        // ?name=orders&page=2
 
     return r;
 }

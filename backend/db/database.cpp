@@ -1,7 +1,5 @@
 #include "database.h"
 #include "../config.h"
-#include "../core/log.h"
-#include <chrono>
 #include <iostream>
 #include <vector>
 
@@ -39,26 +37,11 @@ void Database::disconnect()
     conn_ = nullptr;
 }
 
-// Run one statement and, if a request is being logged, record it
-// (text, time taken, rows) for the admin "Server logs" page.
+// Run one SQL statement and return its rows / error.
 Result Database::run(const string& sql)
 {
     lock_guard<recursive_mutex> lock(mutex_);
 
-    auto started = chrono::steady_clock::now();
-    Result result = execute(sql);
-    double ms = chrono::duration<double, milli>(chrono::steady_clock::now() - started).count();
-
-    bool isSelect = !result.columns.empty();
-    addQueryToCurrentRequest(sql, ms, result.ok, result.error, isSelect,
-                             isSelect ? (long long)result.rows.size() : result.affectedRows);
-
-    return result;
-}
-
-// The actual MySQL call (no logging here).
-Result Database::execute(const string& sql)
-{
     Result result;
 
     if (mysql_query(conn_, sql.c_str()))
@@ -144,31 +127,3 @@ void Transaction::commit()
 // ------------------------------------------------------------
 //  Schema upgrade: the admin panel needs users.role
 // ------------------------------------------------------------
-// Adds a column if the table does not have it yet.
-static bool ensureColumn(const string& table, const string& column, const string& definition,
-                         const string& why)
-{
-    Rows has = db.rows(
-        "SELECT COUNT(*) AS n FROM information_schema.COLUMNS "
-        "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='" + table + "' AND COLUMN_NAME='" + column + "'");
-
-    if (!has.empty() && col(has[0], "n") != "0")
-        return true;
-
-    Result r = db.run("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition);
-
-    if (!r.ok)
-    {
-        cout << "[DB] Could not add " << table << "." << column << ": " << r.error << endl;
-        return false;
-    }
-
-    cout << "[DB] Added " << table << "." << column << " column (" << why << ")." << endl;
-    return true;
-}
-
-bool migrateDatabase()
-{
-    return ensureColumn("users", "role", "VARCHAR(10) NOT NULL DEFAULT 'CUSTOMER'", "admin support")
-        && ensureColumn("orders", "deliver_at", "DATETIME NULL", "demo auto-delivery");
-}

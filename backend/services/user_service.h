@@ -13,10 +13,8 @@ std::string startSession(int userId);                       // returns the new s
 bool        userForSession(const std::string& sessionId, User& user);
 void        endSession(const std::string& sessionId);
 Rows        sessionsForUser(int userId);                    // newest 20
-Rows        allSessions(int limit);                         // admin view
 
 // ---- admin ----
-Rows        listUsers();                                    // with order count + active sessions
-std::string setUserRole(int userId, const std::string& role);
+Rows        listUsers();                                    // with order count
 bool        makeAdminByEmail(const std::string& email);     // used by: server.exe --make-admin <email>
 int         countAdmins();
