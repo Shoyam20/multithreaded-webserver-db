@@ -1,0 +1,30 @@
+<div class="card">
+  <a href="/product?id={{id}}">
+    <div class="thumb" style="background:{{tint}}">{{icon}}
+      {{#if soldOut}}<span class="tag sold">Sold out</span>{{/if}}
+      {{#if lowStock}}<span class="tag low">Few left</span>{{/if}}
+    </div>
+  </a>
+  <div class="cbody">
+    <a class="cname" href="/product?id={{id}}">{{name}}</a>
+    <div class="cdesc">{{description}}</div>
+    <div class="price">{{price}}</div>
+    {{#if soldOut}}<span class="stk no">Out of stock</span>
+    {{else}}{{#if lowStock}}<span class="stk low">Only {{stock}} left</span>{{else}}<span class="stk ok">In stock</span>{{/if}}{{/if}}
+    <div class="cbottom">
+      {{#if soldOut}}
+        <button class="btn ghost block" disabled>Unavailable</button>
+      {{else}}
+        {{#if loggedIn}}
+          <form method="POST" action="/cart/add">
+            <input type="hidden" name="product_id" value="{{id}}">
+            <input type="hidden" name="quantity" value="1">
+            <button class="btn accent block" type="submit">Add to Cart</button>
+          </form>
+        {{else}}
+          <button class="btn accent block" type="button" onclick="openModal('loginModal')">Sign in to buy</button>
+        {{/if}}
+      {{/if}}
+    </div>
+  </div>
+</div>

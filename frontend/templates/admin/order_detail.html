@@ -1,0 +1,50 @@
+<p><a href="/admin/orders">← All orders</a></p>
+
+<div class="cols">
+  <section class="panel">
+    <h2>Items</h2>
+    <table>
+      <tr><th>Product</th><th>Qty</th><th>Price</th><th>Subtotal</th></tr>
+      {{#each items}}
+        <tr>
+          <td><span class="ico">{{icon}}</span> <a href="/admin/products/edit?id={{id}}">{{name}}</a></td>
+          <td>{{quantity}}</td><td>{{price}}</td><td>{{subtotal}}</td>
+        </tr>
+      {{/each}}
+      <tr class="totalrow"><td colspan="3">Order total</td><td><b>{{total}}</b></td></tr>
+    </table>
+  </section>
+
+  <section class="panel">
+    <h2>Order #{{id}}</h2>
+    <p><b>{{customer}}</b><br><span class="muted">{{email}}</span></p>
+    <p class="muted">Placed {{date}}</p>
+    {{#if deliverAt}}<p class="muted">Demo auto-delivery at {{deliverAt}}{{#if onTheWay}} - in <b class="countdown" data-seconds="{{secondsLeft}}">--:--</b>{{/if}}</p>{{/if}}
+    <p>Order status: <span class="pill {{statusClass}}">{{status}}</span><br>
+       Payment: {{paymentMethod}} · <span class="pill {{paymentClass}}">{{paymentStatus}}</span></p>
+
+    {{#if canChange}}
+      <form method="POST" action="/admin/order/status" class="stack">
+        <input type="hidden" name="id" value="{{id}}">
+        <label>Change order status</label>
+        <select name="status">
+          {{#each statusOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{value}}</option>{{/each}}
+        </select>
+        <button class="btn" type="submit">Update status</button>
+        <small class="muted">Cancelling returns the items to stock and cannot be undone.
+          Marking DELIVERED marks cash-on-delivery as PAID.</small>
+      </form>
+
+      <form method="POST" action="/admin/order/payment" class="stack">
+        <input type="hidden" name="id" value="{{id}}">
+        <label>Change payment status</label>
+        <select name="status">
+          {{#each paymentOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{value}}</option>{{/each}}
+        </select>
+        <button class="btn ghost" type="submit">Update payment</button>
+      </form>
+    {{else}}
+      <div class="err">This order was cancelled and can no longer be changed.</div>
+    {{/if}}
+  </section>
+</div>

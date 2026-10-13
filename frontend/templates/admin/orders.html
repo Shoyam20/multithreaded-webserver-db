@@ -1,0 +1,24 @@
+<div class="tabs">
+  {{#each tabs}}<a class="{{#if active}}on{{/if}}" href="{{url}}">{{label}}</a>{{/each}}
+</div>
+
+{{#if orders}}
+<div class="tablewrap">
+<table>
+  <tr><th>Order</th><th>Customer</th><th>Date</th><th>Total</th><th>Order status</th><th>Payment</th><th></th></tr>
+  {{#each orders}}
+    <tr>
+      <td><a href="/admin/order?id={{id}}">#{{id}}</a></td>
+      <td>{{customer}}<br><small class="muted">{{email}}</small></td>
+      <td>{{date}}</td>
+      <td>{{total}}</td>
+      <td><span class="pill {{statusClass}}">{{status}}</span></td>
+      <td><span class="pill {{paymentClass}}">{{paymentStatus}}</span></td>
+      <td><a class="btn sm ghost" href="/admin/order?id={{id}}">Manage</a></td>
+    </tr>
+  {{/each}}
+</table>
+</div>
+{{else}}
+  <div class="panel"><p class="muted">No orders in this view.</p></div>
+{{/if}}

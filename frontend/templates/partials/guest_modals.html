@@ -1,0 +1,22 @@
+<div class="modal" id="loginModal"><div class="modal-box">
+  <button class="modal-close" onclick="closeModal('loginModal')">&times;</button>
+  <h2>Sign in</h2>
+  <form method="POST" action="/login">
+    <input name="email" type="email" placeholder="Email" required>
+    <input name="password" type="password" placeholder="Password" required>
+    <button class="btn accent" type="submit">Sign in</button>
+  </form>
+  <p class="alt">New to Server Sync? <a href="#" onclick="closeModal('loginModal');openModal('signupModal');return false;">Create an account</a></p>
+</div></div>
+
+<div class="modal" id="signupModal"><div class="modal-box">
+  <button class="modal-close" onclick="closeModal('signupModal')">&times;</button>
+  <h2>Create account</h2>
+  <form method="POST" action="/signup">
+    <input name="name" placeholder="Full name" required>
+    <input name="email" type="email" placeholder="Email" required>
+    <input name="password" type="password" placeholder="Password" required>
+    <button class="btn accent" type="submit">Create account</button>
+  </form>
+  <p class="alt">Already a customer? <a href="#" onclick="closeModal('signupModal');openModal('loginModal');return false;">Sign in</a></p>
+</div></div>

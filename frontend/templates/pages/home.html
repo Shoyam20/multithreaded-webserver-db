@@ -1,0 +1,42 @@
+<section class="hero">
+  <div>
+    <h1>Everything you need,<br>delivered to your door.</h1>
+    <p>Shop electronics, fashion, books and more. Live stock, a simple cart, and Cash on Delivery at checkout.</p>
+    <a class="btn accent lg" href="/products">Start shopping</a>
+    {{#if loggedIn}}
+      <a class="btn ghost lg" href="/orders">My orders</a>
+    {{else}}
+      <button class="btn ghost lg" type="button" onclick="openModal('signupModal')">Create account</button>
+    {{/if}}
+  </div>
+  <div class="art">🛍️📱🎧</div>
+</section>
+
+<div class="perks">
+  <div class="perk"><span class="i">💵</span><div><b>Cash on Delivery</b><span>Pay when your order arrives</span></div></div>
+  <div class="perk"><span class="i">📦</span><div><b>Live stock</b><span>Quantities update as people buy</span></div></div>
+  <div class="perk"><span class="i">🧾</span><div><b>Order history</b><span>Every order saved to your account</span></div></div>
+  <div class="perk"><span class="i">🔐</span><div><b>Session login</b><span>See where you are signed in</span></div></div>
+</div>
+
+<div class="sec"><h2>Shop by category</h2><a href="/products">All products →</a></div>
+<div class="cats">
+  {{#each categories}}
+    <a class="cat" href="/products?category={{id}}"><span class="ci">{{icon}}</span><b>{{name}}</b></a>
+  {{/each}}
+</div>
+
+{{#if budget}}
+  <div class="sec"><h2>🔥 Budget picks under ₹1,000</h2><a href="/products?sort=price_asc&max=1000">See all →</a></div>
+  <div class="grid">{{#each budget}}{{> partials/product_card.html}}{{/each}}</div>
+{{/if}}
+
+{{#if newArrivals}}
+  <div class="sec"><h2>✨ New arrivals</h2><a href="/products?sort=newest">See all →</a></div>
+  <div class="grid">{{#each newArrivals}}{{> partials/product_card.html}}{{/each}}</div>
+{{/if}}
+
+{{#if bestSellers}}
+  <div class="sec"><h2>🏆 Best sellers</h2></div>
+  <div class="grid">{{#each bestSellers}}{{> partials/product_card.html}}{{/each}}</div>
+{{/if}}

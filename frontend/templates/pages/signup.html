@@ -1,0 +1,12 @@
+<div class="authwrap"><div class="authcard">
+  <h1>Create account</h1>
+  <p class="sub">Join Server Sync in a few seconds.</p>
+  {{#if error}}<div class="err">{{error}}</div>{{/if}}
+  <form method="POST" action="/signup">
+    <div class="field"><label>Full name</label><input name="name" placeholder="Your name" value="{{name}}" required></div>
+    <div class="field"><label>Email</label><input name="email" type="email" placeholder="you@example.com" value="{{email}}" required></div>
+    <div class="field"><label>Password</label><input name="password" type="password" placeholder="Choose a password" required></div>
+    <button class="btn accent lg" type="submit">Create account</button>
+  </form>
+  <p class="alt">Already have an account? <a href="/login">Sign in</a></p>
+</div></div>

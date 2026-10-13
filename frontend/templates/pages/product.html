@@ -1,0 +1,47 @@
+<div class="crumbs"><a href="/">Home</a> › <a href="/products?category={{categoryId}}">{{categoryName}}</a> › {{name}}</div>
+
+<div class="pd">
+  <div class="thumb big" style="background:{{tint}}">{{icon}}</div>
+
+  <div class="info">
+    <span class="chip">{{categoryName}}</span>
+    <h1>{{name}}</h1>
+    <p>{{description}}</p>
+    <div class="price">{{price}} <small>inclusive of all taxes</small></div>
+
+    {{#if soldOut}}<span class="stk no">Out of stock</span>
+    {{else}}{{#if lowStock}}<span class="stk low">Only {{stock}} left</span>{{else}}<span class="stk ok">In stock</span>{{/if}}{{/if}}
+
+    <div class="buybox">
+      {{#if soldOut}}
+        <button class="btn ghost lg" disabled>Currently unavailable</button>
+      {{else}}
+        {{#if loggedIn}}
+          <form method="POST" action="/cart/add" class="buyform">
+            <input type="hidden" name="product_id" value="{{id}}">
+            <div class="qty">
+              <button type="button" onclick="stepQty(this,-1)">−</button>
+              <input type="number" name="quantity" value="1" min="1" max="{{maxQty}}">
+              <button type="button" onclick="stepQty(this,1)">+</button>
+            </div>
+            <button class="btn accent lg" type="submit">Add to Cart</button>
+            <button class="btn lg" type="submit" name="buy" value="1">Buy Now</button>
+          </form>
+        {{else}}
+          <button class="btn accent lg" type="button" onclick="openModal('loginModal')">Sign in to buy</button>
+        {{/if}}
+      {{/if}}
+    </div>
+
+    <ul class="facts">
+      <li>💵 Cash on Delivery available</li>
+      <li>📦 Live stock — reserved when you place the order</li>
+      <li>🔐 Order history saved to your account</li>
+    </ul>
+  </div>
+</div>
+
+{{#if related}}
+  <div class="sec"><h2>More in {{categoryName}}</h2></div>
+  <div class="grid">{{#each related}}{{> partials/product_card.html}}{{/each}}</div>
+{{/if}}

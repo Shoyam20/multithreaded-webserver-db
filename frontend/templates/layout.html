@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{title}} — Server Sync</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  {{> partials/header.html}}
+
+  <main class="wrap">
+    {{#if noticeText}}<div class="flash {{noticeClass}}">{{noticeText}}</div>{{/if}}
+    {{{content}}}
+  </main>
+
+  {{> partials/footer.html}}
+
+  {{#if loggedIn}}{{else}}{{> partials/guest_modals.html}}{{/if}}
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

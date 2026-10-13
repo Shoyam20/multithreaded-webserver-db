@@ -1,0 +1,32 @@
+<div class="tablewrap">
+<table>
+  <tr><th>ID</th><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th>Orders</th><th>Active sessions</th><th>Change role</th></tr>
+  {{#each users}}
+    <tr>
+      <td>{{id}}</td>
+      <td>{{name}}{{#if isMe}} <b>(you)</b>{{/if}}</td>
+      <td>{{email}}</td>
+      <td><span class="pill {{#if isAdmin}}green{{/if}}">{{role}}</span></td>
+      <td>{{joined}}</td>
+      <td>{{orders}}</td>
+      <td>{{activeSessions}}</td>
+      <td>
+        {{#if isMe}}<span class="muted">—</span>{{else}}
+          <form method="POST" action="/admin/users/role" class="inline"
+                onsubmit="return confirm('Change the role of {{name}}?')">
+            <input type="hidden" name="id" value="{{id}}">
+            {{#if isAdmin}}
+              <input type="hidden" name="role" value="CUSTOMER">
+              <button class="btn sm ghost" type="submit">Make customer</button>
+            {{else}}
+              <input type="hidden" name="role" value="ADMIN">
+              <button class="btn sm" type="submit">Make admin</button>
+            {{/if}}
+          </form>
+        {{/if}}
+      </td>
+    </tr>
+  {{/each}}
+</table>
+</div>
+<p class="muted">Passwords are stored as salted hashes and are never shown.</p>

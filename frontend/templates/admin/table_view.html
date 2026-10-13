@@ -1,0 +1,17 @@
+<p><a href="/admin/tables">← All tables</a> · {{totalRows}} rows · page {{page}} of {{pageCount}} (newest first)</p>
+
+{{#if error}}<div class="err">{{error}}</div>{{/if}}
+
+<div class="tablewrap">
+<table>
+  <tr>{{#each columns}}<th>{{name}}</th>{{/each}}</tr>
+  {{#each rows}}
+    <tr>{{#each cells}}<td>{{value}}</td>{{/each}}</tr>
+  {{/each}}
+</table>
+</div>
+
+<div class="pager">
+  {{#if hasPrev}}<a class="btn ghost" href="/admin/table?name={{tableName}}&page={{prevPage}}">← Newer</a>{{/if}}
+  {{#if hasNext}}<a class="btn ghost" href="/admin/table?name={{tableName}}&page={{nextPage}}">Older →</a>{{/if}}
+</div>
