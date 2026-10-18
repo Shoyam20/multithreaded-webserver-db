@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 
+// Common helpers to format values and render pages.
 using namespace std;
 
 // ------------------------------------------------------------
