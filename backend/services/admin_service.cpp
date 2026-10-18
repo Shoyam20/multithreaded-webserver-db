@@ -1,4 +1,3 @@
-
 #include "admin_service.h"
 #include "../config.h"
 #include <cstdlib> 
