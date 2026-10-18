@@ -1,3 +1,4 @@
+// Parses raw HTTP request text and builds the response text.
 #include "http.h"
 #include <cctype>
 #include <cstdio>
