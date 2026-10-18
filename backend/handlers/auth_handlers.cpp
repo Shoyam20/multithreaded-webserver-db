@@ -4,6 +4,7 @@
 
 using namespace std;
 
+// Shows the sign in form.
 Response loginPage(Request& req)
 {
     return renderPage(req, "Sign in", "pages/login.html");
