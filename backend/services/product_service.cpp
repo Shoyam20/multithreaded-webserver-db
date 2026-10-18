@@ -9,7 +9,7 @@ static const char* SELECT_PRODUCTS =
     "p.category_id, c.category_name "
     "FROM products p JOIN categories c ON p.category_id=c.category_id ";
 
-// Make a user's search text safe for LIKE: %, _ and \ must match literally.
+// Escape special characters so %, _ and \ are treated literally in searches.
 static string likePattern(const string& text)
 {
     string escaped;
@@ -23,9 +23,6 @@ static string likePattern(const string& text)
     return db.quote("%" + escaped + "%");
 }
 
-// ------------------------------------------------------------
-//  Reading
-// ------------------------------------------------------------
 Rows findProducts(const ProductFilter& f)
 {
     string where = "WHERE 1=1";
@@ -60,12 +57,14 @@ Rows findProducts(const ProductFilter& f)
     return db.rows(sql);
 }
 
+// Fetch one product using its product ID.
 Row getProduct(int productId)
 {
     Rows r = db.rows(string(SELECT_PRODUCTS) + "WHERE p.product_id=" + to_string(productId));
     return r.empty() ? Row() : r[0];
 }
 
+// Fetch other products from the same category, excluding the current product.
 Rows relatedProducts(int categoryId, int excludeProductId, int limit)
 {
     return db.rows(string(SELECT_PRODUCTS) +
@@ -74,6 +73,7 @@ Rows relatedProducts(int categoryId, int excludeProductId, int limit)
                    " ORDER BY p.product_id LIMIT " + to_string(limit));
 }
 
+// Fetch the best-selling products based on quantities ordered.
 Rows bestSellers(int limit)
 {
     return db.rows(string(SELECT_PRODUCTS) +
@@ -84,9 +84,7 @@ Rows bestSellers(int limit)
         "WHERE p.stock>0 ORDER BY s.sold DESC LIMIT " + to_string(limit));
 }
 
-// ------------------------------------------------------------
-//  Admin writes
-// ------------------------------------------------------------
+// Format a price with exactly two decimal places.
 static string money2(double v)
 {
     char buf[32];
@@ -94,6 +92,7 @@ static string money2(double v)
     return buf;
 }
 
+// Validate product details before inserting or updating a product.
 static string validate(const ProductInput& in)
 {
     if (in.name.empty() || in.name.size() > 100)
@@ -108,6 +107,7 @@ static string validate(const ProductInput& in)
     if (in.stock < 0)
         return "Stock cannot be negative.";
 
+    // Ensure the selected category exists in the category cache.
     bool categoryExists = false;
     for (const Category& c : categories())
         if (c.id == in.categoryId) categoryExists = true;
@@ -118,6 +118,7 @@ static string validate(const ProductInput& in)
     return "";
 }
 
+// Insert a new product into the database and return its generated ID.
 string createProduct(const ProductInput& in, int& newId)
 {
     string error = validate(in);
@@ -134,6 +135,7 @@ string createProduct(const ProductInput& in, int& newId)
     return "";
 }
 
+// Update the details of an existing product.
 string updateProduct(int productId, const ProductInput& in)
 {
     string error = validate(in);
@@ -150,6 +152,7 @@ string updateProduct(int productId, const ProductInput& in)
     return r.ok ? "" : "Database error: " + r.error;
 }
 
+// Update the available stock of a product.
 string setProductStock(int productId, int stock)
 {
     if (stock < 0) return "Stock cannot be negative.";
@@ -160,6 +163,7 @@ string setProductStock(int productId, int stock)
     return r.ok ? "" : "Database error: " + r.error;
 }
 
+// Delete a product only if it has no order history.
 string deleteProduct(int productId)
 {
     Transaction tx;
@@ -171,7 +175,6 @@ string deleteProduct(int productId)
         return "This product appears in past orders, so it cannot be deleted. "
                "Set its stock to 0 instead.";
 
-    // Remove it from any carts first (foreign key), then delete it.
     db.run("DELETE FROM cart_items WHERE product_id=" + to_string(productId));
     Result r = db.run("DELETE FROM products WHERE product_id=" + to_string(productId));
 
