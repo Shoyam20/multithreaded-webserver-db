@@ -2,6 +2,7 @@
 #include "user_service.h"
 #include <cstdlib>
 
+// Signup, login and session handling for users.
 using namespace std;
 
 // Random hex text from the operating system's random generator.
