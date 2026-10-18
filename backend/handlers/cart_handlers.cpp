@@ -5,6 +5,7 @@
 
 using namespace std;
 
+// Shows the items in the cart with the total.
 Response cartPage(Request& req)
 {
     Rows items = cartItems(req.user.id);
