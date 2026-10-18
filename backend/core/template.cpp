@@ -4,6 +4,7 @@
 #include <fstream>
 #include <sstream>
 
+// Loads HTML templates and fills in {{values}}.
 using namespace std;
 
 // ------------------------------------------------------------
