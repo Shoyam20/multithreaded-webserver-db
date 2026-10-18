@@ -1,3 +1,4 @@
+// Maps every URL of the site to its handler.
 #include "routes.h"
 #include "handlers/handlers.h"
 
