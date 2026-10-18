@@ -9,6 +9,7 @@
 
 using namespace std;
 
+// Routes are built once at startup and shared by all threads.
 static const Router router = buildRoutes();
 
 // ------------------------------------------------------------
