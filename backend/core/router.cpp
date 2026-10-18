@@ -2,6 +2,7 @@
 
 using namespace std;
 
+// Finds the handler for this method + path and runs it.
 bool Router::dispatch(Request& req, Response& out) const
 {
     // A HEAD request is answered like GET.
