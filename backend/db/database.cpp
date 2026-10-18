@@ -7,8 +7,9 @@
 
 using namespace std;
 
-Database db;
+Database db; 
 
+// Establish a connection between the C++ server and MySQL.
 bool Database::connect()
 {
     conn_ = mysql_init(nullptr);
@@ -19,6 +20,7 @@ bool Database::connect()
         return false;
     }
 
+    // Connect using the database credentials and settings from config.h.
     if (!mysql_real_connect(conn_, config::dbHost.c_str(), config::dbUser.c_str(),
                             config::dbPass.c_str(), config::dbName.c_str(),
                             config::dbPort, nullptr, 0))
@@ -27,25 +29,27 @@ bool Database::connect()
         return false;
     }
 
+    // Set the character encoding to support a wide range of characters.
     mysql_set_character_set(conn_, "utf8mb4");
     cout << "[DB] Connected to MySQL successfully." << endl;
     return true;
 }
 
+// Close the MySQL connection and reset the connection pointer.
 void Database::disconnect()
 {
     if (conn_) mysql_close(conn_);
     conn_ = nullptr;
 }
 
-// Run one statement and, if a request is being logged, record it
-// (text, time taken, rows) for the admin "Server logs" page.
+// Execute a SQL statement and record its execution details for server logs.
 Result Database::run(const string& sql)
 {
     lock_guard<recursive_mutex> lock(mutex_);
 
     auto started = chrono::steady_clock::now();
     Result result = execute(sql);
+
     double ms = chrono::duration<double, milli>(chrono::steady_clock::now() - started).count();
 
     bool isSelect = !result.columns.empty();
@@ -55,7 +59,7 @@ Result Database::run(const string& sql)
     return result;
 }
 
-// The actual MySQL call (no logging here).
+// Execute the SQL statement and convert its result into a Result object.
 Result Database::execute(const string& sql)
 {
     Result result;
@@ -72,7 +76,6 @@ Result Database::execute(const string& sql)
 
     if (!res)
     {
-        // Not a SELECT (INSERT / UPDATE / DELETE ...)
         result.affectedRows = (long long)mysql_affected_rows(conn_);
         result.insertId = (long long)mysql_insert_id(conn_);
         return result;
@@ -96,10 +99,11 @@ Result Database::execute(const string& sql)
         result.rows.push_back(r);
     }
 
-    mysql_free_result(res);
+    mysql_free_result(res);  
     return result;
 }
 
+// Execute a query and return only its rows.
 Rows Database::rows(const string& sql)
 {
     Result r = run(sql);
@@ -110,6 +114,7 @@ Rows Database::rows(const string& sql)
     return r.rows;
 }
 
+// Escape special SQL characters in text and wrap the result in single quotes.
 string Database::quote(const string& text)
 {
     lock_guard<recursive_mutex> lock(mutex_);
@@ -121,29 +126,26 @@ string Database::quote(const string& text)
     return "'" + string(buf.data(), n) + "'";
 }
 
-// ------------------------------------------------------------
-//  Transaction
-// ------------------------------------------------------------
+// Start a transaction when a Transaction object is created.
 Transaction::Transaction()
 {
     db.run("START TRANSACTION");
 }
 
+// Automatically roll back changes if commit() was not called.
 Transaction::~Transaction()
 {
     if (!done_) db.run("ROLLBACK");
 }
 
+// Save all changes made during the transaction.
 void Transaction::commit()
 {
     db.run("COMMIT");
     done_ = true;
 }
 
-// ------------------------------------------------------------
-//  Schema upgrade: the admin panel needs users.role
-// ------------------------------------------------------------
-// Adds a column if the table does not have it yet.
+// Add a database column only if it does not already exist.
 static bool ensureColumn(const string& table, const string& column, const string& definition,
                          const string& why)
 {
@@ -166,6 +168,7 @@ static bool ensureColumn(const string& table, const string& column, const string
     return true;
 }
 
+// Apply required schema updates for admin roles and automatic delivery.
 bool migrateDatabase()
 {
     return ensureColumn("users", "role", "VARCHAR(10) NOT NULL DEFAULT 'CUSTOMER'", "admin support")
