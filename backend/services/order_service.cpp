@@ -10,12 +10,13 @@
 
 using namespace std;
 
-// Money is added up in paise (integers) so rounding errors cannot creep in.
+// Convert the price into paise to avoid floating-point rounding errors.
 static long long toPaise(const string& decimalText)
 {
     return llround(atof(decimalText.c_str()) * 100.0);
 }
 
+// Convert paise back into a decimal price string.
 static string paiseToText(long long paise)
 {
     char buf[32];
@@ -23,29 +24,29 @@ static string paiseToText(long long paise)
     return buf;
 }
 
-// A random delivery delay between the configured minimum and maximum (seconds).
+// Generate a random delivery delay within the configured time range.
 static int randomDeliverySeconds()
 {
     static mt19937 gen((unsigned)chrono::steady_clock::now().time_since_epoch().count());
     static mutex genMutex;
 
+    // Protect the random number generator during concurrent access.
     lock_guard<mutex> lock(genMutex);
     return uniform_int_distribution<int>(config::deliveryMinSeconds, config::deliveryMaxSeconds)(gen);
 }
 
 // ------------------------------------------------------------
-//  Checkout
+// Checkout: create an order from the user's active cart.
 // ------------------------------------------------------------
 PlaceOrderResult placeOrder(int userId)
 {
     PlaceOrderResult out;
 
-    Transaction tx;      // rolls back automatically unless we reach commit()
+    Transaction tx;  
 
     int cartId = activeCartId(userId, false);
     if (cartId == 0) { out.error = "You have no active cart."; return out; }
 
-    // FOR UPDATE locks these product rows so two shoppers cannot buy the last item together.
     Rows items = db.rows(
         "SELECT ci.product_id, ci.quantity, p.price, p.stock "
         "FROM cart_items ci JOIN products p ON ci.product_id=p.product_id "
@@ -53,7 +54,6 @@ PlaceOrderResult placeOrder(int userId)
 
     if (items.empty()) { out.error = "Your cart is empty."; return out; }
 
-    // 1. Check stock and add up the total.
     long long totalPaise = 0;
 
     for (const Row& item : items)
@@ -72,8 +72,7 @@ PlaceOrderResult placeOrder(int userId)
 
     string total = paiseToText(totalPaise);
 
-    // 2. Create the order.
-    // Demo: schedule the delivery 1-2 minutes from now (see deliverDueOrders).
+    // Create the order with PLACED status and a scheduled delivery time.
     Result order = db.run("INSERT INTO orders (user_id, cart_id, total, status, deliver_at) VALUES (" +
                           to_string(userId) + "," + to_string(cartId) + "," + total + ",'PLACED'," +
                           "DATE_ADD(NOW(), INTERVAL " + to_string(randomDeliverySeconds()) + " SECOND))");
@@ -81,7 +80,7 @@ PlaceOrderResult placeOrder(int userId)
 
     out.orderId = order.insertId;
 
-    // 3. Copy each cart line into order_items and reduce the stock.
+    // Save each ordered product and decrease its available stock.
     for (const Row& item : items)
     {
         string productId = col(item, "product_id");
@@ -92,12 +91,13 @@ PlaceOrderResult placeOrder(int userId)
                              col(item, "price") + ")");
         if (!line.ok) { out.error = line.error; return out; }
 
+        // Reduce stock only if enough units are still available.
         Result stock = db.run("UPDATE products SET stock=stock-" + qty +
                               " WHERE product_id=" + productId + " AND stock>=" + qty);
         if (!stock.ok || stock.affectedRows != 1) { out.error = "Stock update failed."; return out; }
     }
 
-    // 4. Record the (cash on delivery) payment and close the cart.
+    // Create a pending Cash on Delivery payment and mark the cart as checked out.
     Result pay = db.run("INSERT INTO payments (order_id, amount, method, status) VALUES (" +
                         to_string(out.orderId) + "," + total + ",'COD','PENDING')");
     if (!pay.ok) { out.error = pay.error; return out; }
@@ -105,14 +105,13 @@ PlaceOrderResult placeOrder(int userId)
     Result cart = db.run("UPDATE cart SET status='CHECKED_OUT' WHERE cart_id=" + to_string(cartId));
     if (!cart.ok) { out.error = cart.error; return out; }
 
+    // Commit all order-related database changes together.
     tx.commit();
     out.ok = true;
     return out;
 }
 
-// ------------------------------------------------------------
-//  Reading orders
-// ------------------------------------------------------------
+// Fetch orders with optional user and status filters.
 Rows listOrders(const OrderFilter& f)
 {
     string where = "WHERE 1=1";
@@ -133,6 +132,7 @@ Rows listOrders(const OrderFilter& f)
     return db.rows(sql);
 }
 
+// Fetch details of one order using its order ID.
 Row getOrder(int orderId)
 {
     Rows r = db.rows(
@@ -145,6 +145,7 @@ Row getOrder(int orderId)
     return r.empty() ? Row() : r[0];
 }
 
+// Fetch all products belonging to a particular order.
 Rows orderItems(int orderId)
 {
     return db.rows(
@@ -155,14 +156,15 @@ Rows orderItems(int orderId)
         "WHERE oi.order_id=" + to_string(orderId));
 }
 
-// ------------------------------------------------------------
-//  Admin: change status
-// ------------------------------------------------------------
+// Admin: validate and update order or payment status.
+
+// Check whether the order status is supported by the application.
 bool isValidOrderStatus(const string& s)
 {
     return s == "PLACED" || s == "SHIPPED" || s == "DELIVERED" || s == "CANCELLED";
 }
 
+// Check whether the payment status is valid.
 bool isValidPaymentStatus(const string& s)
 {
     return s == "PENDING" || s == "PAID" || s == "FAILED" || s == "REFUNDED";
@@ -184,8 +186,6 @@ string updateOrderStatus(int orderId, const string& newStatus)
     if (oldStatus == newStatus)
         return "";
 
-    // A cancelled order has already given its stock back; reopening it would
-    // make the stock numbers wrong, so it is final.
     if (oldStatus == "DELIVERED" && newStatus == "CANCELLED")
         return "A delivered order cannot be cancelled.";
 
@@ -196,23 +196,21 @@ string updateOrderStatus(int orderId, const string& newStatus)
 
     if (newStatus == "CANCELLED")
     {
-        // Put the items back on the shelf.
         Result restock = db.run(
             "UPDATE products p JOIN order_items oi ON oi.product_id=p.product_id "
             "SET p.stock=p.stock+oi.quantity WHERE oi.order_id=" + id);
         if (!restock.ok) return "Database error: " + restock.error;
 
-        // Money already taken is refunded; otherwise the payment is just cancelled.
         string payment = (col(order, "payment_status") == "PAID") ? "REFUNDED" : "CANCELLED";
         db.run("UPDATE payments SET status='" + payment + "' WHERE order_id=" + id);
     }
     else if (newStatus == "DELIVERED")
     {
-        // Cash on delivery is collected when the parcel is handed over.
         db.run("UPDATE payments SET status='PAID', paid_at=CURRENT_TIMESTAMP "
                "WHERE order_id=" + id + " AND method='COD' AND status='PENDING'");
     }
 
+    // Save the new order status.
     Result r = db.run("UPDATE orders SET status=" + db.quote(newStatus) + " WHERE order_id=" + id);
     if (!r.ok) return "Database error: " + r.error;
 
@@ -220,6 +218,7 @@ string updateOrderStatus(int orderId, const string& newStatus)
     return "";
 }
 
+// Update the payment status for a specific order.
 string updatePaymentStatus(int orderId, const string& newStatus)
 {
     if (!isValidPaymentStatus(newStatus))
@@ -234,12 +233,8 @@ string updatePaymentStatus(int orderId, const string& newStatus)
     return "";
 }
 
-// ------------------------------------------------------------
-//  Demo auto-delivery
-// ------------------------------------------------------------
-// Called every few seconds by a background thread (see main.cpp).
-// Marks every order whose delivery time has come as DELIVERED and its
-// cash-on-delivery payment as PAID - both changes happen together.
+// Demo auto-delivery: automatically complete due orders.
+
 int deliverDueOrders()
 {
     Transaction tx;
@@ -254,14 +249,13 @@ int deliverDueOrders()
                       "AND deliver_at<=NOW()");
 
     if (!r.ok)
-        return 0;               // tx not committed -> rolled back
+        return 0; 
 
     tx.commit();
     return (int)r.affectedRows;
 }
 
-// A customer may cancel their own order until it has been delivered.
-// The cancel itself is the same rolled-back-to-stock logic the admin uses.
+// Allow customers to cancel their own orders before delivery.
 string cancelOrderByCustomer(int userId, int orderId)
 {
     Row order = getOrder(orderId);
@@ -277,7 +271,5 @@ string cancelOrderByCustomer(int userId, int orderId)
     if (status == "DELIVERED")
         return "Too late - this order has already been delivered, so it can no longer be cancelled.";
 
-    // updateOrderStatus re-checks the status inside its own transaction, so even if
-    // the delivery thread wins the race at this very moment, a delivered order is never cancelled.
     return updateOrderStatus(orderId, "CANCELLED");
 }
