@@ -6,7 +6,7 @@ namespace config
 {
     std::string dbHost = "localhost";
     std::string dbUser = "root";
-    std::string dbPass = "";
+    std::string dbPass = "ECOM_DB_PASS";
     std::string dbName = "ecommerce_db";
     int         dbPort = 3306;
 
