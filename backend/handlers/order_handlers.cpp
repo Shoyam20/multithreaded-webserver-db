@@ -5,6 +5,7 @@
 #include "../services/user_service.h"
 #include <cstdlib>
 
+// Checkout and order history pages.
 using namespace std;
 
 
