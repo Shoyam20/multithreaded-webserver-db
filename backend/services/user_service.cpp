@@ -1,11 +1,10 @@
-#define _CRT_RAND_S          // lets us use rand_s(), the OS random number source
+#define _CRT_RAND_S         
 #include "user_service.h"
 #include <cstdlib>
 
-// Signup, login and session handling for users.
 using namespace std;
 
-// Random hex text from the operating system's random generator.
+// Generate a random hexadecimal string for password salts and session IDs.
 static string randomHex(int length)
 {
     static const char digits[] = "0123456789abcdef";
@@ -15,18 +14,18 @@ static string randomHex(int length)
     {
         unsigned int r = 0;
         rand_s(&r);
-        out += digits[r % 16];
+        out += digits[r % 16];  
     }
 
     return out;
 }
 
 // ------------------------------------------------------------
-//  Passwords
-//  Stored as  sha256$<salt>$<hash>  (the hash is computed by MySQL's SHA2).
-//  Accounts created before this change still hold plain text; they are
-//  upgraded to the hashed format the next time they log in.
+// Password hashing and verification
+// Password format: sha256$<salt>$<hash>
 // ------------------------------------------------------------
+
+// Generate a SHA-256 hash using the salt and password through MySQL.
 static string saltedHash(const string& salt, const string& password)
 {
     Rows r = db.rows("SELECT SHA2(CONCAT(" + db.quote(salt) + "," + db.quote(password) +
@@ -34,16 +33,19 @@ static string saltedHash(const string& salt, const string& password)
     return r.empty() ? "" : col(r[0], "h");
 }
 
+// Generate a unique salt and store the password in the hashed format.
 static string makePasswordRecord(const string& password)
 {
     string salt = randomHex(16);
     return "sha256$" + salt + "$" + saltedHash(salt, password);
 }
 
+// Check the supplied password against the stored password record.
 static bool passwordMatches(const string& stored, const string& password)
 {
+    // Support accounts that still contain an old plain-text password.
     if (stored.compare(0, 7, "sha256$") != 0)
-        return stored == password;                          // old plain-text account
+        return stored == password;
 
     size_t second = stored.find('$', 7);
     if (second == string::npos) return false;
@@ -53,8 +55,10 @@ static bool passwordMatches(const string& stored, const string& password)
 }
 
 // ------------------------------------------------------------
-//  Accounts
+// User accounts
 // ------------------------------------------------------------
+
+// Register a new user after validating the details and checking the email.
 string signUp(const string& name, const string& email, const string& password)
 {
     if (name.empty() || email.empty() || password.empty())
@@ -65,6 +69,7 @@ string signUp(const string& name, const string& email, const string& password)
 
     DbLock lock;
 
+    // Prevent registration with an email that is already in use.
     Rows existing = db.rows("SELECT user_id FROM users WHERE email=" + db.quote(email));
     if (!existing.empty())
         return "That email is already registered. Try signing in.";
@@ -76,6 +81,7 @@ string signUp(const string& name, const string& email, const string& password)
     return r.ok ? "" : "Could not create the account: " + r.error;
 }
 
+// Authenticate a user and fill the User object with their account details.
 string logIn(const string& email, const string& password, User& user)
 {
     if (email.empty() || password.empty())
@@ -99,7 +105,7 @@ string logIn(const string& email, const string& password, User& user)
     user.email = col(row, "email");
     user.role  = col(row, "role");
 
-    // Upgrade an old plain-text password to the hashed format.
+    // Upgrade an old plain-text password to the hashed format after login.
     if (col(row, "password").compare(0, 7, "sha256$") != 0)
         db.run("UPDATE users SET password=" + db.quote(makePasswordRecord(password)) +
                " WHERE user_id=" + to_string(user.id));
@@ -108,8 +114,10 @@ string logIn(const string& email, const string& password, User& user)
 }
 
 // ------------------------------------------------------------
-//  Sessions
+// User sessions
 // ------------------------------------------------------------
+
+// Create a new session for a user and return its session ID.
 string startSession(int userId)
 {
     for (int attempt = 0; attempt < 5; attempt++)
@@ -124,6 +132,7 @@ string startSession(int userId)
     return "";
 }
 
+// Validate a session and retrieve the associated user's details.
 bool userForSession(const string& sessionId, User& user)
 {
     if (sessionId.empty()) return false;
@@ -146,6 +155,7 @@ bool userForSession(const string& sessionId, User& user)
     return true;
 }
 
+// End an active session and record its logout time.
 void endSession(const string& sessionId)
 {
     if (sessionId.empty()) return;
@@ -154,6 +164,7 @@ void endSession(const string& sessionId)
            "WHERE session_id=" + db.quote(sessionId) + " AND is_active=TRUE");
 }
 
+// Fetch the recent sessions belonging to a particular user.
 Rows sessionsForUser(int userId)
 {
     return db.rows("SELECT session_id, login_time, last_activity, logout_time, is_active "
@@ -161,6 +172,7 @@ Rows sessionsForUser(int userId)
                    " ORDER BY login_time DESC LIMIT 20");
 }
 
+// Fetch session details for the admin dashboard.
 Rows allSessions(int limit)
 {
     return db.rows("SELECT s.session_id, u.name, u.email, s.login_time, s.last_activity, "
@@ -170,8 +182,10 @@ Rows allSessions(int limit)
 }
 
 // ------------------------------------------------------------
-//  Admin
+// Admin: manage users and roles
 // ------------------------------------------------------------
+
+// List users with their order counts and active session counts.
 Rows listUsers()
 {
     return db.rows(
@@ -181,6 +195,7 @@ Rows listUsers()
         "FROM users u ORDER BY u.user_id");
 }
 
+// Change a user's role to CUSTOMER or ADMIN.
 string setUserRole(int userId, const string& role)
 {
     if (role != "CUSTOMER" && role != "ADMIN")
@@ -192,12 +207,14 @@ string setUserRole(int userId, const string& role)
     return r.ok ? "" : "Database error: " + r.error;
 }
 
+// Promote a user to admin using their email address.
 bool makeAdminByEmail(const string& email)
 {
     Result r = db.run("UPDATE users SET role='ADMIN' WHERE email=" + db.quote(email));
     return r.ok && r.affectedRows > 0;
 }
 
+// Return the total number of admin accounts.
 int countAdmins()
 {
     Rows r = db.rows("SELECT COUNT(*) AS n FROM users WHERE role='ADMIN'");
